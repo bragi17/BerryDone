@@ -3,7 +3,7 @@
     v-model:show="visible"
     preset="card"
     title="优先级设置"
-    style="width: 800px; max-height: 80vh;"
+    style="width: 900px; max-height: 85vh;"
     :segmented="{
       content: true,
       footer: 'soft'
@@ -15,68 +15,61 @@
         <h3 class="section-title">基础优先级设置</h3>
         <p class="section-desc">优先级范围: 1-10，数字越大优先级越高</p>
 
-        <div class="priority-item">
-          <div class="priority-label">
-            <span class="label-text">截止日期优先级</span>
-            <span class="priority-value">{{ localConfig.deadlinePriority }}</span>
+        <div class="basic-priority-grid">
+          <div class="priority-row">
+            <div class="priority-info">
+              <span class="label-text">截止日期优先级</span>
+              <span class="priority-value">{{ localConfig.deadlinePriority }}</span>
+            </div>
+            <div class="priority-slider">
+              <n-slider
+                v-model:value="localConfig.deadlinePriority"
+                :min="1"
+                :max="10"
+                :step="1"
+                :marks="{ 1: '1', 5: '5', 10: '10' }"
+              />
+            </div>
           </div>
-          <n-slider
-            v-model:value="localConfig.deadlinePriority"
-            :min="1"
-            :max="10"
-            :step="1"
-            :marks="{
-              1: '1',
-              5: '5',
-              10: '10'
-            }"
-          />
-          <p class="priority-hint">截止日期越近的任务优先级越高</p>
-        </div>
 
-        <div class="priority-item">
-          <div class="priority-label">
-            <span class="label-text">接单时间优先级</span>
-            <span class="priority-value">{{ localConfig.orderTimePriority }}</span>
+          <div class="priority-row">
+            <div class="priority-info">
+              <span class="label-text">接单时间优先级</span>
+              <span class="priority-value">{{ localConfig.orderTimePriority }}</span>
+            </div>
+            <div class="priority-slider">
+              <n-slider
+                v-model:value="localConfig.orderTimePriority"
+                :min="1"
+                :max="10"
+                :step="1"
+                :marks="{ 1: '1', 5: '5', 10: '10' }"
+              />
+            </div>
           </div>
-          <n-slider
-            v-model:value="localConfig.orderTimePriority"
-            :min="1"
-            :max="10"
-            :step="1"
-            :marks="{
-              1: '1',
-              5: '5',
-              10: '10'
-            }"
-          />
-          <p class="priority-hint">越早接单的任务优先级越高</p>
-        </div>
 
-        <div class="priority-item">
-          <div class="priority-label">
-            <span class="label-text">费用优先级</span>
-            <span class="priority-value">{{ localConfig.costPriority }}</span>
+          <div class="priority-row">
+            <div class="priority-info">
+              <span class="label-text">费用优先级</span>
+              <span class="priority-value">{{ localConfig.costPriority }}</span>
+            </div>
+            <div class="priority-slider">
+              <n-slider
+                v-model:value="localConfig.costPriority"
+                :min="1"
+                :max="10"
+                :step="1"
+                :marks="{ 1: '1', 5: '5', 10: '10' }"
+              />
+            </div>
           </div>
-          <n-slider
-            v-model:value="localConfig.costPriority"
-            :min="1"
-            :max="10"
-            :step="1"
-            :marks="{
-              1: '1',
-              5: '5',
-              10: '10'
-            }"
-          />
-          <p class="priority-hint">费用越高的任务优先级越高</p>
         </div>
       </div>
 
       <!-- 服务优先级设置 -->
       <div class="section">
         <h3 class="section-title">服务优先级设置</h3>
-        <p class="section-desc">按分类或单独设置每个服务的优先级</p>
+        <p class="section-desc">按分类或单独设置每个服务的优先级（默认为1）</p>
 
         <div v-if="!servicesLoading && servicesByCategory.length > 0" class="services-list">
           <div
@@ -84,10 +77,13 @@
             :key="categoryGroup.category"
             class="category-group"
           >
-            <!-- 分类标题 -->
-            <div class="category-header" @click="toggleCategory(categoryGroup.category)">
-              <div class="category-header-left">
-                <n-icon :component="expandedCategories.has(categoryGroup.category) ? ChevronDownIcon : ChevronForwardIcon" />
+            <!-- 分类标题行 -->
+            <div class="category-header">
+              <div class="category-header-left" @click="toggleCategory(categoryGroup.category)">
+                <n-icon
+                  :component="expandedCategories.has(categoryGroup.category) ? ChevronDownIcon : ChevronForwardIcon"
+                  size="18"
+                />
                 <span class="category-name">{{ categoryGroup.category }}</span>
                 <span class="category-count">({{ categoryGroup.services.length }})</span>
                 <n-tag
@@ -95,23 +91,23 @@
                   type="success"
                   size="small"
                   :bordered="false"
-                  style="margin-left: 8px;"
                 >
                   有订单
                 </n-tag>
               </div>
-              <div class="category-priority">
-                <span class="priority-label-small">分类优先级</span>
-                <n-input-number
-                  v-model:value="localConfig.categoryPriorities[categoryGroup.category]"
-                  :min="1"
-                  :max="10"
-                  :step="1"
-                  size="small"
-                  style="width: 80px;"
-                  @click.stop
-                  @update:value="(val) => handleCategoryPriorityChange(categoryGroup.category, val)"
-                />
+              <div class="category-priority-control" @click.stop>
+                <span class="priority-label-mini">分类优先级</span>
+                <span class="priority-value-mini">{{ getCategoryPriority(categoryGroup.category) }}</span>
+                <div class="slider-wrapper">
+                  <n-slider
+                    :value="getCategoryPriority(categoryGroup.category)"
+                    @update:value="(val) => handleCategoryPriorityChange(categoryGroup.category, val)"
+                    :min="1"
+                    :max="10"
+                    :step="1"
+                    :tooltip="false"
+                  />
+                </div>
               </div>
             </div>
 
@@ -120,7 +116,7 @@
               <div
                 v-for="service in categoryGroup.services"
                 :key="service.id"
-                class="service-item"
+                class="service-row"
                 :class="{ 'has-orders': service.hasOrders }"
               >
                 <div class="service-info">
@@ -134,16 +130,19 @@
                     {{ service.orderCount }} 个订单
                   </n-tag>
                 </div>
-                <n-input-number
-                  v-model:value="localConfig.servicePriorities[service.serviceId]"
-                  :min="1"
-                  :max="10"
-                  :step="1"
-                  size="small"
-                  style="width: 80px;"
-                  placeholder="默认"
-                  @update:value="(val) => handleServicePriorityChange(service.serviceId, val)"
-                />
+                <div class="service-priority-control">
+                  <span class="priority-value-mini">{{ getServicePriority(service.serviceId) }}</span>
+                  <div class="slider-wrapper">
+                    <n-slider
+                      :value="getServicePriority(service.serviceId)"
+                      @update:value="(val) => handleServicePriorityChange(service.serviceId, val)"
+                      :min="1"
+                      :max="10"
+                      :step="1"
+                      :tooltip="false"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -180,7 +179,6 @@ import {
   NSpace,
   NTag,
   NIcon,
-  NInputNumber,
   NSpin
 } from 'naive-ui'
 import { ChevronForwardOutline as ChevronForwardIcon, ChevronDownOutline as ChevronDownIcon } from '@vicons/ionicons5'
@@ -286,6 +284,16 @@ watch(() => props.config, (newConfig) => {
   }
 }, { immediate: true, deep: true })
 
+// 获取分类优先级（如果未设置则返回1）
+const getCategoryPriority = (category: string): number => {
+  return localConfig.value.categoryPriorities[category] || 1
+}
+
+// 获取服务优先级（如果未设置则返回1）
+const getServicePriority = (serviceId: string): number => {
+  return localConfig.value.servicePriorities[serviceId] || 1
+}
+
 // 切换分类展开/折叠
 const toggleCategory = (category: string) => {
   if (expandedCategories.value.has(category)) {
@@ -349,7 +357,7 @@ const handleCancel = () => {
 
 <style scoped>
 .priority-settings {
-  max-height: 60vh;
+  max-height: 65vh;
   overflow-y: auto;
   padding-right: 8px;
 }
@@ -375,76 +383,85 @@ const handleCancel = () => {
 
 /* 区块样式 */
 .section {
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
 .section-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: #e0e0e0;
-  margin: 0 0 8px 0;
+  margin: 0 0 6px 0;
 }
 
 .section-desc {
-  font-size: 13px;
-  color: #aaa;
-  margin: 0 0 20px 0;
+  font-size: 12px;
+  color: #888;
+  margin: 0 0 16px 0;
 }
 
-/* 优先级项 */
-.priority-item {
-  margin-bottom: 24px;
-  padding: 16px;
+/* 基础优先级网格 */
+.basic-priority-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.priority-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 12px;
   background: #1a1a1a;
-  border-radius: 12px;
+  border-radius: 8px;
   border: 1px solid #2a2a2a;
   transition: all 0.2s;
 }
 
-.priority-item:hover {
+.priority-row:hover {
   border-color: #8B5CF6;
   background: #1e1e1e;
 }
 
-.priority-label {
+.priority-info {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  gap: 12px;
+  min-width: 180px;
 }
 
 .label-text {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: #e0e0e0;
 }
 
 .priority-value {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: #8B5CF6;
   background: rgba(139, 92, 246, 0.1);
-  padding: 4px 12px;
-  border-radius: 8px;
+  padding: 2px 10px;
+  border-radius: 6px;
+  min-width: 32px;
+  text-align: center;
 }
 
-.priority-hint {
-  font-size: 12px;
-  color: #888;
-  margin: 8px 0 0 0;
+.priority-slider {
+  flex: 1;
+  max-width: 400px;
 }
 
 /* 服务列表 */
 .services-list {
-  max-height: 400px;
+  max-height: 450px;
   overflow-y: auto;
   padding-right: 4px;
 }
 
 .category-group {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   border: 1px solid #2a2a2a;
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
   background: #1a1a1a;
   transition: all 0.2s;
@@ -458,73 +475,94 @@ const handleCancel = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 16px;
-  cursor: pointer;
-  user-select: none;
+  padding: 10px 14px;
   background: #1e1e1e;
-  transition: all 0.2s;
-}
-
-.category-header:hover {
-  background: #242424;
+  gap: 16px;
 }
 
 .category-header-left {
   display: flex;
   align-items: center;
   gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  flex: 1;
+  transition: all 0.2s;
+}
+
+.category-header-left:hover {
+  color: #8B5CF6;
 }
 
 .category-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #e0e0e0;
 }
 
 .category-count {
-  font-size: 12px;
-  color: #888;
+  font-size: 11px;
+  color: #666;
 }
 
-.category-priority {
+.category-priority-control {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-width: 280px;
 }
 
-.priority-label-small {
-  font-size: 12px;
-  color: #aaa;
+.priority-label-mini {
+  font-size: 11px;
+  color: #888;
+  white-space: nowrap;
+}
+
+.priority-value-mini {
+  font-size: 14px;
+  font-weight: 600;
+  color: #8B5CF6;
+  background: rgba(139, 92, 246, 0.1);
+  padding: 1px 8px;
+  border-radius: 5px;
+  min-width: 28px;
+  text-align: center;
+}
+
+.slider-wrapper {
+  flex: 1;
+  max-width: 180px;
 }
 
 .services-container {
-  padding: 8px;
+  padding: 6px;
   background: #1a1a1a;
 }
 
-.service-item {
+.service-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  margin-bottom: 4px;
-  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 3px;
+  border-radius: 6px;
   background: #1e1e1e;
   border: 1px solid transparent;
   transition: all 0.2s;
+  gap: 16px;
 }
 
-.service-item:hover {
+.service-row:hover {
   background: #242424;
   border-color: #3a3a3a;
 }
 
-.service-item.has-orders {
+.service-row.has-orders {
   background: rgba(251, 191, 36, 0.05);
   border-color: rgba(251, 191, 36, 0.2);
 }
 
-.service-item.has-orders:hover {
+.service-row.has-orders:hover {
   background: rgba(251, 191, 36, 0.1);
   border-color: rgba(251, 191, 36, 0.3);
 }
@@ -533,11 +571,23 @@ const handleCancel = () => {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .service-name {
-  font-size: 13px;
+  font-size: 12px;
   color: #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.service-priority-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 230px;
 }
 
 /* 加载和空状态 */
@@ -554,6 +604,6 @@ const handleCancel = () => {
 .loading-state p,
 .empty-state p {
   margin-top: 16px;
-  font-size: 14px;
+  font-size: 13px;
 }
 </style>
