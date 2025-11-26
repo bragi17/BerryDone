@@ -1,0 +1,29 @@
+node_modules
+dist
+out
+.DS_Store
+.eslintcache
+*.log*
+
+# VGen cookies and data (privacy)
+cookies/*.json
+
+# VGen fetched data
+vgen-*.html
+vgen-*.json
+
+# Database files (local data)
+berrydone-test.json
+data/berrydone.json
+
+# OS files
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
