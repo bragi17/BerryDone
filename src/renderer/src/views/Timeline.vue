@@ -149,6 +149,15 @@
             </template>
             {{ isScheduling ? '排单中...' : '运行智能排单' }}
           </n-button>
+          <n-button
+            quaternary
+            @click="showPrioritySettings = true"
+          >
+            <template #icon>
+              <n-icon :component="SettingsOutline" />
+            </template>
+            优先级设置
+          </n-button>
           <n-button quaternary @click="saveSchedulerConfig">
             保存配置
           </n-button>
@@ -655,6 +664,15 @@
         </div>
       </template>
     </n-modal>
+
+    <!-- 优先级设置对话框 -->
+    <PrioritySettings
+      v-model:show="showPrioritySettings"
+      :config="priorityConfig"
+      :services="vgenServices"
+      :commissions="vgenCommissions"
+      @save="handleSavePriorityConfig"
+    />
   </div>
 </template>
 
@@ -693,13 +711,15 @@ import {
   EllipseOutline,
   RefreshOutline,
   SyncOutline,
-  InformationCircleOutline
+  InformationCircleOutline,
+  SettingsOutline
 } from '@vicons/ionicons5'
 import TaskCard from '../components/TaskCard.vue'
 import TaskDialog from '../components/TaskDialog.vue'
+import PrioritySettings from '../components/PrioritySettings.vue'
 import { useStore, Task, taskStatusConfig } from '../store'
 import { parseDateString, formatDateString, getTodayString } from '../utils/dateUtils'
-import { scheduleCommissions, type ScheduledTask, type SchedulerConfig, DEFAULT_SCHEDULER_CONFIG } from '../utils/scheduler'
+import { scheduleCommissions, type ScheduledTask, type SchedulerConfig, type PriorityConfig, DEFAULT_SCHEDULER_CONFIG, DEFAULT_PRIORITY_CONFIG } from '../utils/scheduler'
 import type { VGenCommission } from '../store'
 
 const store = useStore()
@@ -758,11 +778,14 @@ interface VGenCommission {
 
 const vgenCommissions = ref<VGenCommission[]>([])
 const vgenDataLoaded = ref(false)
+const vgenServices = ref<any[]>([])
 
 // 智能排单相关状态
 const schedulerConfig = ref<SchedulerConfig>(DEFAULT_SCHEDULER_CONFIG)
 const scheduledTasks = ref<ScheduledTask[]>([])
 const schedulerLoaded = ref(false)
+const priorityConfig = ref<PriorityConfig>(DEFAULT_PRIORITY_CONFIG)
+const showPrioritySettings = ref(false)
 const isScheduling = ref(false)
 const schedulerCurrentDate = ref(new Date()) // 排单视图的当前日期
 const schedulerViewMode = ref<'week' | 'month'>('week') // 视图模式：周/月
@@ -3081,20 +3104,22 @@ const runScheduling = async () => {
       console.error('[Timeline] 加载工时配置失败:', error)
     }
 
-    // 运行排单算法
+    // 运行排单算法（包含优先级配置）
     const result = scheduleCommissions(
       vgenCommissions.value,
       schedulerConfig.value,
       {
         startFrom: getTodayString(),
         priorityWeights: {
-          dueDate: 1,
-          status: 1,
-          payment: 1,
-          manual: 0
+          dueDate: 0.4,
+          status: 0.3,
+          payment: 0.1,
+          manual: 0.2 // 启用手动优先级权重
         }
       },
-      workHoursConfig
+      workHoursConfig,
+      priorityConfig.value, // 传递优先级配置
+      vgenServices.value // 传递服务列表
     )
 
     // 确保结果是纯 JSON 对象（移除任何无法序列化的属性）
@@ -3108,6 +3133,19 @@ const runScheduling = async () => {
     message.error(`排单失败: ${error.message}`)
   } finally {
     isScheduling.value = false
+  }
+}
+
+// 保存优先级配置
+const handleSavePriorityConfig = async (config: PriorityConfig) => {
+  try {
+    await window.api.scheduler.savePriorityConfig(config)
+    priorityConfig.value = config
+    message.success('优先级设置已保存')
+    console.log('✅ 保存优先级配置:', config)
+  } catch (error: any) {
+    console.error('保存优先级配置失败:', error)
+    message.error(`保存失败: ${error.message}`)
   }
 }
 
@@ -3163,8 +3201,28 @@ onMounted(async () => {
     console.error('加载 VGen commissions 失败:', error)
   }
 
+  // 加载 VGen Services 数据
+  try {
+    const services = await window.api.db.getVGenServices()
+    vgenServices.value = services
+    console.log(`✅ 加载了 ${services.length} 个 VGen services`)
+  } catch (error) {
+    console.error('加载 VGen services 失败:', error)
+  }
+
   // 加载智能排单数据
   await loadSchedulerData()
+
+  // 加载优先级配置
+  try {
+    const config = await window.api.scheduler.getPriorityConfig()
+    if (config) {
+      priorityConfig.value = config
+      console.log('✅ 加载优先级配置:', config)
+    }
+  } catch (error) {
+    console.error('加载优先级配置失败:', error)
+  }
 
   // 监听更新进度
   window.api.vgen.onUpdateProgress((progress) => {

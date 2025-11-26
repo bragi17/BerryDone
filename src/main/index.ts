@@ -5,7 +5,8 @@ import icon from '../../resources/icon.png?asset'
 import { initDB, getDB, Task, Project, VGenService } from './db'
 import { fetchVGenCommissions, saveVGenData } from './vgen'
 import { VGenUpdater } from './vgen-updater'
-import type { SchedulerState, SchedulerConfig, ScheduledTask } from './types/scheduler'
+import type { SchedulerState, SchedulerConfig, ScheduledTask, PriorityConfig } from './types/scheduler'
+import { DEFAULT_PRIORITY_CONFIG } from './types/scheduler'
 
 function createWindow(): void {
   // Create the browser window.
@@ -282,6 +283,21 @@ function registerDBHandlers(): void {
       console.error('[Main] 保存排单失败:', error)
       throw error
     }
+  })
+
+  // 优先级配置相关
+  ipcMain.handle('scheduler:getPriorityConfig', async () => {
+    const db = getDB()
+    await db.read()
+    return db.data.priorityConfig || DEFAULT_PRIORITY_CONFIG
+  })
+
+  ipcMain.handle('scheduler:savePriorityConfig', async (_event, config: PriorityConfig) => {
+    const db = getDB()
+    await db.read()
+    db.data.priorityConfig = config
+    await db.write()
+    return true
   })
 
   // VGen 数据更新

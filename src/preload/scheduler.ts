@@ -1,5 +1,5 @@
 import { ipcRenderer } from 'electron'
-import type { SchedulerState, SchedulerConfig, ScheduledTask } from '../main/types/scheduler'
+import type { SchedulerState, SchedulerConfig, ScheduledTask, PriorityConfig } from '../main/types/scheduler'
 
 export const schedulerAPI = {
   // 获取完整状态
@@ -18,5 +18,11 @@ export const schedulerAPI = {
   getScheduledTasks: () => ipcRenderer.invoke('scheduler:getScheduledTasks') as Promise<ScheduledTask[]>,
 
   // 保存已排单任务
-  saveScheduledTasks: (tasks: ScheduledTask[]) => ipcRenderer.invoke('scheduler:saveScheduledTasks', tasks) as Promise<boolean>
+  saveScheduledTasks: (tasks: ScheduledTask[]) => ipcRenderer.invoke('scheduler:saveScheduledTasks', tasks) as Promise<boolean>,
+
+  // 获取优先级配置
+  getPriorityConfig: () => ipcRenderer.invoke('scheduler:getPriorityConfig') as Promise<PriorityConfig | null>,
+
+  // 保存优先级配置
+  savePriorityConfig: (config: PriorityConfig) => ipcRenderer.invoke('scheduler:savePriorityConfig', config) as Promise<boolean>
 }

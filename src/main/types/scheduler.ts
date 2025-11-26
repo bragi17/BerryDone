@@ -35,9 +35,30 @@ export interface SchedulerState {
   historyIndex: number
 }
 
+/**
+ * 手动优先级配置
+ * 优先级范围: 1-10，数字越大优先级越高
+ */
+export interface PriorityConfig {
+  deadlinePriority: number
+  orderTimePriority: number
+  costPriority: number
+  categoryPriorities: Record<string, number>
+  servicePriorities: Record<string, number>
+}
+
 export const DEFAULT_SCHEDULER_CONFIG: SchedulerConfig = {
   workHoursPerDay: {},
   restDays: [],
   defaultWorkHours: 8,
   weekendRest: true
 }
+
+export const DEFAULT_PRIORITY_CONFIG: PriorityConfig = {
+  deadlinePriority: 5,
+  orderTimePriority: 1,
+  costPriority: 1,
+  categoryPriorities: {},
+  servicePriorities: {}
+}
+

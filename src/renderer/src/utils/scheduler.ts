@@ -7,11 +7,13 @@ import type {
   SchedulerConfig,
   ScheduledTask,
   ScheduleOptions,
-  CalendarDay
+  CalendarDay,
+  PriorityConfig
 } from '../types/scheduler'
 import {
   DEFAULT_SCHEDULE_OPTIONS,
-  DEFAULT_SCHEDULER_CONFIG
+  DEFAULT_SCHEDULER_CONFIG,
+  DEFAULT_PRIORITY_CONFIG
 } from '../types/scheduler'
 import { parseDateString, formatDateString, getTodayString } from './dateUtils'
 
@@ -23,8 +25,8 @@ export interface WorkHoursConfig {
 }
 
 // 重新导出类型和常量
-export type { SchedulerConfig, ScheduledTask, ScheduleOptions, CalendarDay }
-export { DEFAULT_SCHEDULE_OPTIONS, DEFAULT_SCHEDULER_CONFIG }
+export type { SchedulerConfig, ScheduledTask, ScheduleOptions, CalendarDay, PriorityConfig }
+export { DEFAULT_SCHEDULE_OPTIONS, DEFAULT_SCHEDULER_CONFIG, DEFAULT_PRIORITY_CONFIG }
 
 /**
  * 工时计算辅助函数
@@ -116,11 +118,15 @@ interface PriorityWeights {
  *
  * @param comm - VGen Commission
  * @param weights - 权重配置
+ * @param priorityConfig - 手动优先级配置
+ * @param services - 服务列表（用于获取category）
  * @returns 优先级分数（0-100）
  */
 export function calculatePriority(
   comm: VGenCommission,
-  weights: PriorityWeights = DEFAULT_SCHEDULE_OPTIONS.priorityWeights!
+  weights: PriorityWeights = DEFAULT_SCHEDULE_OPTIONS.priorityWeights!,
+  priorityConfig?: PriorityConfig,
+  services?: any[]
 ): number {
   let score = 0
 
@@ -145,10 +151,49 @@ export function calculatePriority(
     score += 20 * weights.payment
   }
 
-  // TODO: 手动优先级（未来扩展）
-  // if (comm.manualPriority) {
-  //   score += comm.manualPriority * weights.manual
-  // }
+  // 手动优先级配置 (0-100分)
+  if (priorityConfig && weights.manual && weights.manual > 0) {
+    let manualScore = 0
+
+    // 1. 截止日期优先级 (1-10 -> 0-25分)
+    if (comm.dueDate) {
+      manualScore += (priorityConfig.deadlinePriority / 10) * 25
+    }
+
+    // 2. 接单时间优先级 (1-10 -> 0-20分)
+    // 越早接单的越优先
+    if (comm.startDate) {
+      const orderDaysAgo = daysBetween(parseDateString(comm.startDate), new Date())
+      const orderUrgency = Math.min(20, orderDaysAgo * 0.5) // 每天增加0.5分，最多20分
+      manualScore += (priorityConfig.orderTimePriority / 10) * orderUrgency
+    }
+
+    // 3. 费用优先级 (1-10 -> 0-25分)
+    // 费用越高越优先
+    if (comm.totalCost) {
+      // 假设1000USD为基准，超过1000每增加100增加1分，最多25分
+      const costScore = Math.min(25, (comm.totalCost / 100) * 2.5)
+      manualScore += (priorityConfig.costPriority / 10) * costScore
+    }
+
+    // 4. 服务优先级 (1-10 -> 0-30分)
+    let servicePriorityScore = 1 // 默认1
+
+    // 优先使用服务特定优先级
+    if (comm.serviceID && priorityConfig.servicePriorities[comm.serviceID]) {
+      servicePriorityScore = priorityConfig.servicePriorities[comm.serviceID]
+    } else if (services && comm.serviceID) {
+      // 查找服务的分类
+      const service = services.find(s => s.serviceId === comm.serviceID || s.id === comm.serviceID)
+      if (service && service.category && priorityConfig.categoryPriorities[service.category]) {
+        servicePriorityScore = priorityConfig.categoryPriorities[service.category]
+      }
+    }
+
+    manualScore += (servicePriorityScore / 10) * 30
+
+    score += manualScore * weights.manual
+  }
 
   return score
 }
@@ -291,13 +336,17 @@ export function allocateWorkDays(
  * @param config - 日历配置
  * @param options - 排单选项
  * @param workHoursConfig - 工时配置（可选）
+ * @param priorityConfig - 手动优先级配置（可选）
+ * @param services - 服务列表（可选，用于获取category）
  * @returns 排单结果列表
  */
 export function scheduleCommissions(
   commissions: VGenCommission[],
   config: SchedulerConfig,
   options: ScheduleOptions = DEFAULT_SCHEDULE_OPTIONS,
-  workHoursConfig?: WorkHoursConfig | null
+  workHoursConfig?: WorkHoursConfig | null,
+  priorityConfig?: PriorityConfig | null,
+  services?: any[]
 ): ScheduledTask[] {
   // Step 1: 过滤出需要排单的订单（READY 和 WIP）
   const pendingTasks = commissions.filter(
@@ -307,7 +356,12 @@ export function scheduleCommissions(
   // Step 2: 计算每个订单的优先级并排序
   const tasksWithPriority = pendingTasks.map(comm => ({
     commission: comm,
-    priorityScore: calculatePriority(comm, options.priorityWeights),
+    priorityScore: calculatePriority(
+      comm,
+      options.priorityWeights,
+      priorityConfig || undefined,
+      services
+    ),
     remainingHours: getCommissionWorkHours(comm, workHoursConfig)
   }))
 
@@ -542,6 +596,9 @@ export function scheduleCommissions(
  * @param existingTasks - 现有已排单任务
  * @param commissions - 所有订单
  * @param config - 日历配置
+ * @param workHoursConfig - 工时配置
+ * @param priorityConfig - 手动优先级配置
+ * @param services - 服务列表
  * @returns 新的排单任务
  */
 export function rescheduleTask(
@@ -549,7 +606,9 @@ export function rescheduleTask(
   existingTasks: ScheduledTask[],
   commissions: VGenCommission[],
   config: SchedulerConfig,
-  workHoursConfig?: WorkHoursConfig | null
+  workHoursConfig?: WorkHoursConfig | null,
+  priorityConfig?: PriorityConfig | null,
+  services?: any[]
 ): ScheduledTask | null {
   // 找到对应的 commission
   const commission = commissions.find(c => c.id === taskId)
@@ -587,7 +646,12 @@ export function rescheduleTask(
     hoursPerDay: allocation.hoursPerDay,
     totalHours: hoursNeeded,
     isLocked: false,
-    priorityScore: calculatePriority(commission)
+    priorityScore: calculatePriority(
+      commission,
+      DEFAULT_SCHEDULE_OPTIONS.priorityWeights,
+      priorityConfig || undefined,
+      services
+    )
   }
 }
 

@@ -112,6 +112,38 @@ export interface ScheduleOptions {
 }
 
 /**
+ * 手动优先级配置
+ * 优先级范围: 1-10，数字越大优先级越高
+ */
+export interface PriorityConfig {
+  /** 截止日期优先级 (1-10, 默认5) */
+  deadlinePriority: number
+
+  /** 接单时间优先级 (1-10, 默认1) */
+  orderTimePriority: number
+
+  /** 费用优先级 (1-10, 默认1) */
+  costPriority: number
+
+  /** 按分类设置的服务优先级 { 'Illustration': 8, 'Animation': 6 } */
+  categoryPriorities: Record<string, number>
+
+  /** 按服务ID设置的服务优先级 { 'service-id-1': 9, 'service-id-2': 3 } */
+  servicePriorities: Record<string, number>
+}
+
+/**
+ * 默认手动优先级配置
+ */
+export const DEFAULT_PRIORITY_CONFIG: PriorityConfig = {
+  deadlinePriority: 5,
+  orderTimePriority: 1,
+  costPriority: 1,
+  categoryPriorities: {},
+  servicePriorities: {}
+}
+
+/**
  * 日历天的状态
  */
 export interface CalendarDay {
