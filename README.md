@@ -186,21 +186,6 @@ BerryDone/
 - **PAID** 💚: 已付款（绿色显示）
 - **UNPAID** 🧡: 未付款（橙色显示）
 
-## 🔮 未来计划
-
-- [ ] VGen 双向同步
-- [ ] 客户管理功能
-- [ ] 发票生成
-- [ ] 通知提醒
-- [ ] 导出报表
-- [ ] 移动端适配
-
-## 📞 获取帮助
-
-如遇问题请查看：
-1. `FIXES_AND_FEATURES.md` - 常见问题修复
-2. `HOW_TO_USE_VGEN.md` - VGen 相关问题
-3. GitHub Issues - 提交新问题
 
 ## 📄 许可证
 
@@ -208,4 +193,3 @@ MIT License
 
 ---
 
-**享受你的 Commission 管理之旅！** 🎉
