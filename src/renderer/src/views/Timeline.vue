@@ -1947,32 +1947,87 @@ const checkTaskConflict = (task: ExtendedScheduledTask, targetDate: string, targ
   return conflicts
 }
 
-// 检查冲突解决是否会导致边界溢出
-const checkBoundaryOverflow = (conflicts: ExtendedScheduledTask[], movingTask: ExtendedScheduledTask, targetHour: number) => {
+// ✨ 检查冲突解决是否会导致边界溢出（改进版：递归检查连锁推动）
+const checkBoundaryOverflow = (
+  conflicts: ExtendedScheduledTask[],
+  movingTask: ExtendedScheduledTask,
+  targetHour: number,
+  targetDate: string
+): { willOverflow: boolean; affectedTasks: ExtendedScheduledTask[] } => {
   const movingTaskHours = movingTask.totalHours / movingTask.workDays.length
   const movingTaskEndHour = targetHour + movingTaskHours
+  const affectedTasks: ExtendedScheduledTask[] = []
 
-  for (const conflictTask of conflicts) {
-    const conflictHours = conflictTask.totalHours / conflictTask.workDays.length
-    // 使用 ?? 而不是 || 来正确处理0值
-    const currentStartHour = conflictTask.startHour ?? 9
+  // 模拟连锁推动，检查是否有任务会溢出
+  const simulatePushChain = (
+    pushingTaskEndHour: number,
+    pushingTaskStartHour: number,
+    tasksToCheck: ExtendedScheduledTask[],
+    processedIds: Set<string> = new Set()
+  ): boolean => {
+    // 按开始时间排序
+    const sorted = [...tasksToCheck].sort((a, b) => (a.startHour ?? 9) - (b.startHour ?? 9))
 
-    // 检查向下推是否会超出24小时
-    if (currentStartHour >= targetHour) {
-      const requiredEndHour = movingTaskEndHour + conflictHours
-      if (requiredEndHour > 24) {
-        return true // 会溢出
-      }
-    } else {
-      // 检查向上推是否会低于0
-      const requiredStartHour = targetHour - conflictHours
-      if (requiredStartHour < 0) {
-        return true // 会溢出
+    for (const task of sorted) {
+      const taskId = task.taskId || task.commissionId
+      if (processedIds.has(taskId)) continue
+      processedIds.add(taskId)
+
+      const taskHours = task.totalHours / task.workDays.length
+      const currentStartHour = task.startHour ?? 9
+      let newStartHour: number
+
+      // 判断推动方向
+      if (currentStartHour >= pushingTaskStartHour) {
+        // 向下推
+        newStartHour = Math.max(currentStartHour, pushingTaskEndHour)
+        const newEndHour = newStartHour + taskHours
+
+        // ✨ 检查是否会超出24小时边界
+        if (newEndHour > 24) {
+          console.log(`[Timeline] 连锁推动溢出检测: ${taskId} 会被推到 ${newEndHour}h (超过24h)`)
+          affectedTasks.push(task)
+          return true // 会溢出
+        }
+
+        // ✨ 递归检查：这个任务被推动后，是否会推动其他任务导致溢出
+        const nextConflicts = checkTaskConflict(task, targetDate, newStartHour, taskId)
+        if (nextConflicts.length > 0) {
+          const willOverflow = simulatePushChain(newEndHour, newStartHour, nextConflicts, processedIds)
+          if (willOverflow) {
+            affectedTasks.push(task)
+            return true
+          }
+        }
+      } else {
+        // 向上推
+        newStartHour = Math.min(currentStartHour, pushingTaskStartHour - taskHours)
+
+        // ✨ 检查是否会低于0
+        if (newStartHour < 0) {
+          console.log(`[Timeline] 连锁推动溢出检测: ${taskId} 会被推到 ${newStartHour}h (低于0h)`)
+          affectedTasks.push(task)
+          return true // 会溢出
+        }
+
+        // ✨ 递归检查向上推动
+        const nextConflicts = checkTaskConflict(task, targetDate, newStartHour, taskId)
+        if (nextConflicts.length > 0) {
+          const willOverflow = simulatePushChain(newStartHour, newStartHour, nextConflicts, processedIds)
+          if (willOverflow) {
+            affectedTasks.push(task)
+            return true
+          }
+        }
       }
     }
+
+    return false
   }
 
-  return false // 不会溢出
+  const willOverflow = simulatePushChain(movingTaskEndHour, targetHour, conflicts)
+
+  return { willOverflow, affectedTasks }
 }
 
 // ✨ 智能解决冲突 - 调整其他卡片位置（改进版，支持连锁碰撞检测）
@@ -2246,23 +2301,30 @@ const handleCardDragMove = (event: MouseEvent) => {
   // 正常移动逻辑：检查冲突
   const conflicts = checkTaskConflict(task, newStartDate, newStartHour, task.commissionId)
 
-  // 检查是否会导致边界溢出
-  const willOverflow = conflicts.length > 0 && checkBoundaryOverflow(conflicts, task, newStartHour)
+  // ✨ 检查是否会导致边界溢出（包含连锁推动检测）
+  const overflowResult = conflicts.length > 0
+    ? checkBoundaryOverflow(conflicts, task, newStartHour, newStartDate)
+    : { willOverflow: false, affectedTasks: [] }
 
-  if (willOverflow) {
+  if (overflowResult.willOverflow) {
     // 如果会溢出，标记为无效放置
     isInvalidPlacement.value = true
 
     // 给拖动的卡片添加警告效果
     ;(task as any)._isInvalid = true
 
-    // 给冲突的卡片添加警告效果
+    // ✨ 给所有会被推出边界的卡片添加警告效果
+    for (const affectedTask of overflowResult.affectedTasks) {
+      ;(affectedTask as any)._isWarning = true
+    }
+
+    // 给直接冲突的卡片也添加警告效果
     for (const conflictTask of conflicts) {
       ;(conflictTask as any)._isWarning = true
     }
 
     // 不更新位置，保持原位
-    console.log('[Timeline] 无效放置：会导致边界溢出')
+    console.log('[Timeline] 无效放置：会导致连锁推动溢出，受影响任务:', overflowResult.affectedTasks.length)
     return
   }
 
@@ -2289,8 +2351,8 @@ const handleCardDragMove = (event: MouseEvent) => {
   task.displayTop = newStartHour * percentPerHour
   task.displayHeight = Math.min((24 - newStartHour) * percentPerHour, taskHours * percentPerHour)
 
-  // 智能解决冲突（只在不溢出的情况下）
-  if (conflicts.length > 0 && !willOverflow) {
+  // ✅ 智能解决冲突（只在不溢出的情况下）
+  if (conflicts.length > 0 && !overflowResult.willOverflow) {
     resolveConflicts(task, newStartHour, conflicts)
   }
 
