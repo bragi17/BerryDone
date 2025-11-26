@@ -1297,12 +1297,9 @@ const getScheduledTaskStyle = (task: any) => {
   // 计算顶部位置
   const top = startHour * percentPerHour
 
-  // 计算任务高度（基于工时）：
+  // ✅ Bug Fix 3: 计算任务高度（不压缩）
   const avgHoursPerDay = task.totalHours / task.workDays.length
-  // 限制高度，确保不超出24小时范围
-  const maxAvailableHours = 24 - startHour
-  const actualHours = Math.min(avgHoursPerDay, maxAvailableHours)
-  const height = Math.max(4.17, actualHours * percentPerHour) // 最小1小时高度
+  const height = Math.max(4.17, avgHoursPerDay * percentPerHour) // 最小1小时高度
 
   // 如果任务有自定义的显示位置，使用它们
   if ((task as ExtendedScheduledTask).displayTop !== undefined) {
@@ -1815,9 +1812,11 @@ const handleCardResizeStart = (event: MouseEvent, task: ScheduledTask, direction
       // 存储调整方向
       ;(interactingTask.value as any)._resizeDirection = direction
 
-      // 移除检测监听器，添加实际拉伸监听器
+      // ✅ Bug Fix 2: 移除检测监听器，添加实际拉伸监听器（包括结束监听）
       document.removeEventListener('mousemove', checkResizeMove)
+      document.removeEventListener('mouseup', checkResizeEnd)
       document.addEventListener('mousemove', handleCardResizeMove)
+      document.addEventListener('mouseup', handleCardResizeEnd)
     }
   }
 
@@ -2036,7 +2035,8 @@ const resolveConflicts = (
   targetHour: number,
   conflicts: ExtendedScheduledTask[],
   processedTasks: Set<string> = new Set(),
-  depth: number = 0
+  depth: number = 0,
+  originalDate?: string  // ✅ Bug Fix: 添加原始日期参数，防止跨日期推动
 ) => {
   // 防止无限递归
   const MAX_DEPTH = 10
@@ -2048,6 +2048,9 @@ const resolveConflicts = (
   const movingTaskHours = movingTask.totalHours / movingTask.workDays.length
   const movingTaskEndHour = targetHour + movingTaskHours
   const movingTaskId = movingTask.taskId || movingTask.commissionId
+
+  // ✅ Bug Fix: 如果没有提供原始日期，使用移动任务的第一个工作日
+  const targetDate = originalDate || movingTask.workDays[0]
 
   // 标记当前任务已处理
   processedTasks.add(movingTaskId)
@@ -2076,17 +2079,37 @@ const resolveConflicts = (
 
     // 如果冲突任务在移动任务之后，向下推
     if (currentStartHour >= targetHour) {
-      newStartHour = Math.min(24 - conflictHours, movingTaskEndHour)
+      // ✅ Bug Fix 3: 检查推动后是否会触底，如果会则不推动
+      const proposedStartHour = Math.max(currentStartHour, movingTaskEndHour)
+      const proposedEndHour = proposedStartHour + conflictHours
+
+      if (proposedEndHour > 24) {
+        // 会触底，不执行推动，保持原位
+        console.log('[Timeline] 推动会导致触底，阻止推动:', conflictTaskId)
+        // 移除挤压标记
+        delete (conflictTask as any)._isSqueezed
+        continue
+      }
+
+      newStartHour = proposedStartHour
     } else {
       // 如果冲突任务在移动任务之前，尝试向上推
       const newEndHour = targetHour
       newStartHour = Math.max(0, newEndHour - conflictHours)
+
+      // ✅ Bug Fix 3: 检查是否会触顶
+      if (newStartHour < 0) {
+        console.log('[Timeline] 推动会导致触顶，阻止推动:', conflictTaskId)
+        delete (conflictTask as any)._isSqueezed
+        continue
+      }
     }
 
-    // 更新任务位置
+    // ✅ Bug Fix 3: 更新任务位置，但不设置displayHeight（避免压缩）
     conflictTask.startHour = newStartHour
     conflictTask.displayTop = (newStartHour / 24) * 100
-    conflictTask.displayHeight = Math.min(((24 - newStartHour) / 24) * 100, (conflictHours / 24) * 100)
+    // 移除 displayHeight 设置，让系统根据 totalHours 自动计算
+    delete (conflictTask as ExtendedScheduledTask).displayHeight
 
     // 记录被移动的任务
     movedTasks.push({ task: conflictTask, newStartHour })
@@ -2101,8 +2124,8 @@ const resolveConflicts = (
   for (const { task, newStartHour } of movedTasks) {
     const taskId = task.taskId || task.commissionId
 
+    // ✅ Bug Fix: 使用原始日期参数进行冲突检测，防止跨日期推动
     // 查找在同一天的其他任务（排除已经处理过的）
-    const targetDate = task.workDays[0] // 假设任务在单天内
     if (!targetDate) continue
 
     // 检查新位置的冲突
@@ -2118,13 +2141,14 @@ const resolveConflicts = (
         newConflicts: newConflicts.length
       })
 
-      // 递归解决连锁冲突
+      // ✅ Bug Fix: 递归解决连锁冲突时，传递原始日期参数
       resolveConflicts(
         task,
         newStartHour,
         newConflicts,
         processedTasks,
-        depth + 1
+        depth + 1,
+        targetDate  // 传递原始日期，确保连锁推动不会跨日期
       )
     }
   }
@@ -2229,8 +2253,13 @@ const handleCardDragMove = (event: MouseEvent) => {
   const newStartDate = newStart.toISOString().split('T')[0]
   const newEndDate = newEnd.toISOString().split('T')[0]
 
-  // 获取任务索引
-  const taskIndex = scheduledTasks.value.findIndex(t => t.commissionId === interactingTask.value!.commissionId)
+  // ✅ Bug Fix 1: 使用taskId查找任务，避免子任务错位
+  // 对于同一订单的多个子任务，commissionId相同，必须使用taskId或精确匹配
+  const interactingTaskId = interactingTask.value!.taskId || interactingTask.value!.commissionId
+  const taskIndex = scheduledTasks.value.findIndex(t => {
+    const tId = t.taskId || t.commissionId
+    return tId === interactingTaskId
+  })
   if (taskIndex === -1) return
 
   const task = scheduledTasks.value[taskIndex] as ExtendedScheduledTask
@@ -2299,7 +2328,8 @@ const handleCardDragMove = (event: MouseEvent) => {
   }
 
   // 正常移动逻辑：检查冲突
-  const conflicts = checkTaskConflict(task, newStartDate, newStartHour, task.commissionId)
+  // ✅ Bug Fix: 使用 taskId 而不是 commissionId，正确排除同一订单的其他子任务
+  const conflicts = checkTaskConflict(task, newStartDate, newStartHour, task.taskId || task.commissionId)
 
   // ✨ 检查是否会导致边界溢出（包含连锁推动检测）
   const overflowResult = conflicts.length > 0
@@ -2345,15 +2375,32 @@ const handleCardDragMove = (event: MouseEvent) => {
 
   task.workDays = workDays
 
-  // 更新显示位置
+  // ✅ Bug Fix 3: 检查任务是否会超出24小时边界
   const percentPerHour = 100 / 24
   const taskHours = task.totalHours / task.workDays.length
+  const taskEndHour = newStartHour + taskHours
+
+  if (taskEndHour > 24) {
+    // 会超出边界，标记为无效放置
+    isInvalidPlacement.value = true
+    ;(task as any)._isInvalid = true
+    console.log('[Timeline] 无效放置：任务会超出24小时边界', {
+      startHour: newStartHour,
+      endHour: taskEndHour,
+      taskHours
+    })
+    // 不更新位置，保持原位
+    return
+  }
+
+  // 更新显示位置（不设置 displayHeight，避免压缩）
   task.displayTop = newStartHour * percentPerHour
-  task.displayHeight = Math.min((24 - newStartHour) * percentPerHour, taskHours * percentPerHour)
+  // ✅ Bug Fix 3: 删除 displayHeight，让系统根据 totalHours 自动计算高度
+  delete (task as ExtendedScheduledTask).displayHeight
 
   // ✅ 智能解决冲突（只在不溢出的情况下）
   if (conflicts.length > 0 && !overflowResult.willOverflow) {
-    resolveConflicts(task, newStartHour, conflicts)
+    resolveConflicts(task, newStartHour, conflicts, new Set(), 0, newStartDate)
   }
 
   hasUnsavedChanges.value = true
@@ -2494,8 +2541,8 @@ const mergeSubTasks = (sourceTask: ScheduledTask, targetTask: ScheduledTask) => 
     if (conflicts.length > 0) {
       console.log('[Timeline] 合并后检测到碰撞，开始解决:', conflicts.length)
 
-      // 使用连锁碰撞检测解决冲突
-      resolveConflicts(extTargetTask, newStartHour, conflicts)
+      // 使用连锁碰撞检测解决冲突，传递原始日期防止跨日期推动
+      resolveConflicts(extTargetTask, newStartHour, conflicts, new Set(), 0, targetDate)
     }
   }
 
@@ -2529,11 +2576,11 @@ const handleCardDragEnd = () => {
         task.workDays = originalTaskState.value.workDays
         task.startHour = originalTaskState.value.startHour
 
-        // 恢复显示位置
+        // 恢复显示位置（不设置 displayHeight，避免压缩）
         const percentPerHour = 100 / 24
-        const taskHours = task.totalHours / task.workDays.length
-        task.displayTop = (task.startHour ?? 9) * percentPerHour  // 使用 ?? 而不是 ||
-        task.displayHeight = Math.min((24 - (task.startHour ?? 9)) * percentPerHour, taskHours * percentPerHour)  // 使用 ?? 而不是 ||
+        task.displayTop = (task.startHour ?? 9) * percentPerHour
+        // ✅ Bug Fix 3: 删除 displayHeight，让系统根据 totalHours 自动计算高度
+        delete (task as ExtendedScheduledTask).displayHeight
 
         console.log('[Timeline] 无效放置，恢复原位')
       }
