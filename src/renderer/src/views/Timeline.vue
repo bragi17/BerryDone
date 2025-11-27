@@ -1763,6 +1763,13 @@ const handleScheduledTaskClick = (task: ScheduledTask) => {
     return
   }
 
+  // ✨ 检查任务状态：锁定和完成状态不允许手动修改时长
+  if (task.status === TaskStatus.LOCKED || task.status === TaskStatus.COMPLETED) {
+    const statusText = task.status === TaskStatus.LOCKED ? '已锁定' : '已完成'
+    message.warning(`此任务${statusText}，无法手动修改时长`)
+    return
+  }
+
   editingScheduledTask.value = task
   editingScheduledTaskHours.value = task.totalHours
   showScheduledTaskDialog.value = true
@@ -2336,9 +2343,9 @@ const handleCardRightClick = (event: MouseEvent, task: ScheduledTask) => {
 
 // 卡片拖动功能（改进版 - 支持垂直移动和智能冲突解决）
 const handleCardDragStart = (event: MouseEvent, task: ScheduledTask) => {
-  // ✨ 检查任务状态：锁定和完成状态不允许跨日期拖拽
-  if (task.status === TaskStatus.LOCKED || task.status === TaskStatus.COMPLETED) {
-    message.warning('此任务已锁定或完成，无法拖拽到其他日期')
+  // ✨ 检查任务状态：只有锁定状态不允许跨日期拖拽
+  if (task.status === TaskStatus.LOCKED) {
+    message.warning('此任务已锁定，无法拖拽到其他日期')
     return
   }
 
@@ -2641,6 +2648,12 @@ const findCollisionTarget = (draggingTask: ScheduledTask, targetDate: string, ta
 
 // ✨ 重构：判断两个任务是否可以合并（同一订单的不同分支）
 const canMergeTasks = (task1: ScheduledTask, task2: ScheduledTask) => {
+  // 规则0：锁定和完成状态的任务不能合并
+  if (task1.status === TaskStatus.LOCKED || task1.status === TaskStatus.COMPLETED ||
+      task2.status === TaskStatus.LOCKED || task2.status === TaskStatus.COMPLETED) {
+    return false
+  }
+
   // 规则1：必须是同一个commission的任务
   if (task1.commissionId !== task2.commissionId) {
     return false
