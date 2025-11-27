@@ -140,10 +140,24 @@ export function calculatePriority(
 
   // 状态优先 (0-30分)
   if (weights.status > 0) {
-    if (comm.status === 'IN_PROGRESS') {
-      score += 30 * weights.status // WIP 优先
-    } else if (comm.status === 'PENDING') {
-      score += 10 * weights.status // READY 次之
+    // 使用手动配置的状态优先级，如果有的话
+    if (priorityConfig) {
+      if (comm.status === 'IN_PROGRESS') {
+        // WIP: 使用配置的 wipPriority (1-10) 转换为 0-30 分
+        const wipScore = (priorityConfig.wipPriority / 10) * 30
+        score += wipScore * weights.status
+      } else if (comm.status === 'PENDING') {
+        // Ready: 使用配置的 readyPriority (1-10) 转换为 0-30 分
+        const readyScore = (priorityConfig.readyPriority / 10) * 30
+        score += readyScore * weights.status
+      }
+    } else {
+      // Fallback 到默认逻辑
+      if (comm.status === 'IN_PROGRESS') {
+        score += 30 * weights.status // WIP 优先
+      } else if (comm.status === 'PENDING') {
+        score += 10 * weights.status // READY 次之
+      }
     }
   }
 

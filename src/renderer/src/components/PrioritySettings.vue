@@ -63,6 +63,38 @@
               />
             </div>
           </div>
+
+          <div class="priority-row">
+            <div class="priority-info">
+              <span class="label-text">WIP（进行中）优先级</span>
+              <span class="priority-value">{{ localConfig.wipPriority }}</span>
+            </div>
+            <div class="priority-slider">
+              <n-slider
+                v-model:value="localConfig.wipPriority"
+                :min="1"
+                :max="10"
+                :step="1"
+                :marks="{ 1: '1', 5: '5', 10: '10' }"
+              />
+            </div>
+          </div>
+
+          <div class="priority-row">
+            <div class="priority-info">
+              <span class="label-text">Ready（待处理）优先级</span>
+              <span class="priority-value">{{ localConfig.readyPriority }}</span>
+            </div>
+            <div class="priority-slider">
+              <n-slider
+                v-model:value="localConfig.readyPriority"
+                :min="1"
+                :max="10"
+                :step="1"
+                :marks="{ 1: '1', 5: '5', 10: '10' }"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -278,6 +310,8 @@ watch(() => props.config, (newConfig) => {
       deadlinePriority: newConfig.deadlinePriority,
       orderTimePriority: newConfig.orderTimePriority,
       costPriority: newConfig.costPriority,
+      wipPriority: newConfig.wipPriority ?? 8,
+      readyPriority: newConfig.readyPriority ?? 5,
       categoryPriorities: { ...newConfig.categoryPriorities },
       servicePriorities: { ...newConfig.servicePriorities }
     }
@@ -328,6 +362,8 @@ const handleSave = () => {
     deadlinePriority: localConfig.value.deadlinePriority,
     orderTimePriority: localConfig.value.orderTimePriority,
     costPriority: localConfig.value.costPriority,
+    wipPriority: localConfig.value.wipPriority,
+    readyPriority: localConfig.value.readyPriority,
     categoryPriorities: {},
     servicePriorities: {}
   }

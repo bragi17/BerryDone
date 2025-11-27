@@ -61,6 +61,8 @@ export interface PriorityConfig {
   deadlinePriority: number
   orderTimePriority: number
   costPriority: number
+  wipPriority: number
+  readyPriority: number
   categoryPriorities: Record<string, number>
   servicePriorities: Record<string, number>
 }
@@ -76,6 +78,8 @@ export const DEFAULT_PRIORITY_CONFIG: PriorityConfig = {
   deadlinePriority: 5,
   orderTimePriority: 1,
   costPriority: 1,
+  wipPriority: 8,
+  readyPriority: 5,
   categoryPriorities: {},
   servicePriorities: {}
 }

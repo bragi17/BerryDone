@@ -140,6 +140,12 @@ export interface PriorityConfig {
   /** 费用优先级 (1-10, 默认1) */
   costPriority: number
 
+  /** WIP（进行中）状态优先级 (1-10, 默认8) */
+  wipPriority: number
+
+  /** Ready（待处理）状态优先级 (1-10, 默认5) */
+  readyPriority: number
+
   /** 按分类设置的服务优先级 { 'Illustration': 8, 'Animation': 6 } */
   categoryPriorities: Record<string, number>
 
@@ -154,6 +160,8 @@ export const DEFAULT_PRIORITY_CONFIG: PriorityConfig = {
   deadlinePriority: 5,
   orderTimePriority: 1,
   costPriority: 1,
+  wipPriority: 8,
+  readyPriority: 5,
   categoryPriorities: {},
   servicePriorities: {}
 }
