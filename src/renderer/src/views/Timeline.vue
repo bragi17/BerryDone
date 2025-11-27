@@ -141,11 +141,11 @@
           <n-button
             type="primary"
             @click="runScheduling"
-            :loading="isScheduling"
             :disabled="isScheduling || vgenCommissions.length === 0"
+            style="min-width: 130px;"
           >
             <template #icon>
-              <n-icon :component="CalendarOutline" />
+              <n-icon :component="isScheduling ? SyncOutline : CalendarOutline" :class="{ 'icon-spin': isScheduling }" />
             </template>
             {{ isScheduling ? '排单中...' : '运行智能排单' }}
           </n-button>
@@ -256,89 +256,116 @@
                 <!-- 任务卡片层 -->
                 <div class="tasks-overlay">
                   <!-- 任务卡片 -->
-                  <div
+                  <n-tooltip
                     v-for="task in getPositionedScheduledTasks()"
                     :key="task.taskId || task.commissionId"
-                    class="scheduled-task-card"
-                    :class="{
-                      'is-modified': hasUnsavedChanges && interactingTask?.commissionId === task.commissionId,
-                      'is-dragging': isDraggingCard && interactingTask?.commissionId === task.commissionId,
-                      'is-squeezed': (task as any)._isSqueezed,
-                      'is-invalid': (task as any)._isInvalid,
-                      'is-warning': (task as any)._isWarning,
-                      'is-sub-task': task.parentTaskId !== undefined,
-                      '_isMergeTarget': (task as any)._isMergeTarget,
-                      '_isMergeReady': (task as any)._isMergeReady
-                    }"
-                    :style="getScheduledTaskStyle(task)"
-                    @mousedown="handleCardDragStart($event, task)"
-                    @click="handleScheduledTaskClick(task)"
+                    :delay="500"
+                    placement="top"
                   >
-                    <!-- 上方拉伸手柄 -->
-                    <div
-                      class="card-resize-handle card-resize-top"
-                      @mousedown.stop="handleCardResizeStart($event, task, 'top')"
-                    >
-                      <div class="resize-indicator"></div>
-                    </div>
+                    <template #trigger>
+                      <div
+                        class="scheduled-task-card"
+                        :class="{
+                          'is-modified': hasUnsavedChanges && interactingTask?.commissionId === task.commissionId,
+                          'is-dragging': isDraggingCard && interactingTask?.commissionId === task.commissionId,
+                          'is-squeezed': (task as any)._isSqueezed,
+                          'is-invalid': (task as any)._isInvalid,
+                          'is-warning': (task as any)._isWarning,
+                          'is-sub-task': task.parentTaskId !== undefined,
+                          '_isMergeTarget': (task as any)._isMergeTarget,
+                          '_isMergeReady': (task as any)._isMergeReady,
+                          'is-small-card': isSmallCard(task)
+                        }"
+                        :style="getScheduledTaskStyle(task)"
+                        @mousedown="handleCardDragStart($event, task)"
+                        @click="handleScheduledTaskClick(task)"
+                      >
+                        <!-- 上方拉伸手柄 -->
+                        <div
+                          class="card-resize-handle card-resize-top"
+                          @mousedown.stop="handleCardResizeStart($event, task, 'top')"
+                        >
+                          <div class="resize-indicator"></div>
+                        </div>
 
-                    <div class="task-card-header">
-                      <div class="task-card-title">
-                        {{ getCommissionById(task.commissionId)?.clientName }}
+                        <div class="task-card-header">
+                          <div class="task-card-title">
+                            {{ getCommissionById(task.commissionId)?.clientName }}
+                          </div>
+                          <n-tag
+                            v-if="task.isLocked"
+                            type="warning"
+                            size="small"
+                            :bordered="false"
+                          >
+                            🔒
+                          </n-tag>
+                        </div>
+                        <div class="task-card-subtitle">
+                          {{ getCommissionById(task.commissionId)?.projectName }}
+                        </div>
+                        <div class="task-card-meta">
+                          <n-tag
+                            type="info"
+                            size="small"
+                            :bordered="false"
+                            class="task-meta-tag"
+                          >
+                            ⏱️ {{ task.totalHours }}h
+                          </n-tag>
+                          <n-tag
+                            type="success"
+                            size="small"
+                            :bordered="false"
+                            class="task-meta-tag"
+                          >
+                            📅 {{ getTaskUniqueDays(task) }}天
+                          </n-tag>
+                          <n-tag
+                            v-if="task.parentTaskId && task.subTaskIndex !== undefined"
+                            type="warning"
+                            size="small"
+                            :bordered="false"
+                            class="task-meta-tag"
+                          >
+                            #{{ task.subTaskIndex + 1 }}/{{ task.subTaskCount }}
+                          </n-tag>
+                        </div>
+
+                        <!-- 下方拉伸手柄 -->
+                        <div
+                          class="card-resize-handle card-resize-bottom"
+                          @mousedown.stop="handleCardResizeStart($event, task, 'bottom')"
+                        >
+                          <div class="resize-indicator"></div>
+                        </div>
                       </div>
-                      <n-tag
-                        v-if="task.isLocked"
-                        type="warning"
-                        size="small"
-                        :bordered="false"
-                      >
-                        🔒
-                      </n-tag>
+                    </template>
+                    <div class="task-tooltip-content">
+                      <div class="tooltip-row">
+                        <strong>客户:</strong> {{ getCommissionById(task.commissionId)?.clientName }}
+                      </div>
+                      <div class="tooltip-row">
+                        <strong>项目:</strong> {{ getCommissionById(task.commissionId)?.projectName }}
+                      </div>
+                      <div class="tooltip-divider"></div>
+                      <div class="tooltip-row">
+                        <strong>总工时:</strong> {{ task.totalHours }} 小时
+                      </div>
+                      <div class="tooltip-row">
+                        <strong>日期:</strong> {{ task.startDate }} ~ {{ task.endDate }}
+                      </div>
+                      <div class="tooltip-row">
+                        <strong>工作天数:</strong> {{ getTaskUniqueDays(task) }} 天
+                      </div>
+                      <div class="tooltip-row" v-if="task.parentTaskId">
+                        <strong>子任务:</strong> #{{ task.subTaskIndex + 1 }} / {{ task.subTaskCount }}
+                      </div>
+                      <div class="tooltip-row">
+                        <strong>状态:</strong> {{ getCommissionById(task.commissionId)?.status }}
+                      </div>
                     </div>
-                    <div class="task-card-subtitle">
-                      {{ getCommissionById(task.commissionId)?.projectName }}
-                    </div>
-                    <div class="task-card-meta">
-                      <!-- ✨ 使用Tag显示工时 -->
-                      <n-tag
-                        type="info"
-                        size="small"
-                        :bordered="false"
-                        class="task-meta-tag"
-                      >
-                        ⏱️ {{ task.totalHours }}h
-                      </n-tag>
-
-                      <!-- ✨ 使用Tag显示天数 -->
-                      <n-tag
-                        type="success"
-                        size="small"
-                        :bordered="false"
-                        class="task-meta-tag"
-                      >
-                        📅 {{ task.workDays.length }}天
-                      </n-tag>
-
-                      <!-- ✨ 使用Tag显示子单序号 -->
-                      <n-tag
-                        v-if="task.parentTaskId && task.subTaskIndex !== undefined"
-                        type="warning"
-                        size="small"
-                        :bordered="false"
-                        class="task-meta-tag"
-                      >
-                        #{{ task.subTaskIndex + 1 }}/{{ task.subTaskCount }}
-                      </n-tag>
-                    </div>
-
-                    <!-- 下方拉伸手柄 -->
-                    <div
-                      class="card-resize-handle card-resize-bottom"
-                      @mousedown.stop="handleCardResizeStart($event, task, 'bottom')"
-                    >
-                      <div class="resize-indicator"></div>
-                    </div>
-                  </div>
+                  </n-tooltip>
                 </div>
               </div>
             </div>
@@ -677,6 +704,7 @@ import {
   NInputNumber,
   NTag,
   NModal,
+  NTooltip,
   useMessage,
   useDialog
 } from 'naive-ui'
@@ -1211,6 +1239,28 @@ const getCommissionById = (id: string) => {
   return vgenCommissions.value.find(c => c.id === id)
 }
 
+// 计算任务跨越的唯一天数（对于子任务，统计所有兄弟任务的唯一天数）
+const getTaskUniqueDays = (task: ScheduledTask) => {
+  // 如果任务有 parentTaskId，说明是子任务
+  if (task.parentTaskId) {
+    // 找到所有同一个 parent 的兄弟子任务（包括自己）
+    const siblingTasks = scheduledTasks.value.filter(
+      t => t.parentTaskId === task.parentTaskId
+    )
+
+    // 收集所有兄弟任务的工作日，去重
+    const allWorkDays = new Set<string>()
+    siblingTasks.forEach(t => {
+      t.workDays.forEach(day => allWorkDays.add(day))
+    })
+
+    return allWorkDays.size
+  }
+
+  // 如果没有 parent，是普通任务，直接返回自己的工作日数量
+  return task.workDays.length
+}
+
 // 计算任务在网格中的位置
 const getPositionedScheduledTasks = () => {
   return scheduledTasks.value.map(task => {
@@ -1347,6 +1397,13 @@ const getTaskBackground = (task: any) => {
 
   return background
 }
+
+// 判断是否是小卡片（用于悬停展开优化）
+const isSmallCard = (task: ScheduledTask) => {
+  const avgHoursPerDay = task.totalHours / task.workDays.length
+  return avgHoursPerDay < 2 // 小于2小时/天的卡片视为小卡片
+}
+
 
 // 将 VGen Commissions 转换为 Task 格式
 const vgenTasksForDisplay = computed(() => {
@@ -1855,8 +1912,13 @@ const handleCardResizeMove = (event: MouseEvent) => {
   // 以0.5小时为单位进行调整
   const hoursChange = Math.round(hoursChangeRaw * 2) / 2 // 四舍五入到最近的0.5
 
-  // 获取任务索引
-  const taskIndex = scheduledTasks.value.findIndex(t => t.commissionId === interactingTask.value!.commissionId)
+  // ✅ Bug Fix: 使用 taskId 查找任务，避免子任务错位
+  // 对于同一订单的多个子任务，commissionId 相同，必须使用 taskId 精确匹配
+  const interactingTaskId = interactingTask.value!.taskId || interactingTask.value!.commissionId
+  const taskIndex = scheduledTasks.value.findIndex(t => {
+    const tId = t.taskId || t.commissionId
+    return tId === interactingTaskId
+  })
   if (taskIndex === -1) return
 
   const task = scheduledTasks.value[taskIndex] as ExtendedScheduledTask
@@ -1922,7 +1984,9 @@ const handleCardResizeEnd = () => {
 const checkTaskConflict = (task: ExtendedScheduledTask, targetDate: string, targetHour: number, excludeTaskId?: string) => {
   // 获取目标日期的所有任务
   const dayTasks = scheduledTasks.value.filter(t => {
-    if (t.commissionId === excludeTaskId) return false
+    // ✅ Bug Fix: 使用 taskId 或 commissionId 进行比较，正确排除当前任务
+    const tId = t.taskId || t.commissionId
+    if (tId === excludeTaskId) return false
     const extTask = t as ExtendedScheduledTask
     return t.workDays.includes(targetDate)
   })
@@ -2030,6 +2094,7 @@ const checkBoundaryOverflow = (
 }
 
 // ✨ 智能解决冲突 - 调整其他卡片位置（改进版，支持连锁碰撞检测）
+// 返回值：true 表示成功解决所有冲突，false 表示存在无法解决的冲突
 const resolveConflicts = (
   movingTask: ExtendedScheduledTask,
   targetHour: number,
@@ -2037,12 +2102,12 @@ const resolveConflicts = (
   processedTasks: Set<string> = new Set(),
   depth: number = 0,
   originalDate?: string  // ✅ Bug Fix: 添加原始日期参数，防止跨日期推动
-) => {
+): boolean => {
   // 防止无限递归
   const MAX_DEPTH = 10
   if (depth >= MAX_DEPTH) {
     console.warn('[Timeline] 连锁碰撞检测达到最大深度，停止递归')
-    return
+    return false
   }
 
   const movingTaskHours = movingTask.totalHours / movingTask.workDays.length
@@ -2060,6 +2125,9 @@ const resolveConflicts = (
 
   // 记录所有被移动的任务，用于连锁碰撞检测
   const movedTasks: Array<{ task: ExtendedScheduledTask; newStartHour: number }> = []
+
+  // ✅ Bug Fix 3: 记录是否所有冲突都成功解决
+  let allConflictsResolved = true
 
   // 智能调整策略
   for (const conflictTask of conflicts) {
@@ -2079,15 +2147,16 @@ const resolveConflicts = (
 
     // 如果冲突任务在移动任务之后，向下推
     if (currentStartHour >= targetHour) {
-      // ✅ Bug Fix 3: 检查推动后是否会触底，如果会则不推动
+      // ✅ Bug Fix 3: 检查推动后是否会触底，如果会则标记为解决失败
       const proposedStartHour = Math.max(currentStartHour, movingTaskEndHour)
       const proposedEndHour = proposedStartHour + conflictHours
 
       if (proposedEndHour > 24) {
-        // 会触底，不执行推动，保持原位
-        console.log('[Timeline] 推动会导致触底，阻止推动:', conflictTaskId)
+        // 会触底，标记解决失败
+        console.log('[Timeline] 推动会导致触底，无法解决冲突:', conflictTaskId)
         // 移除挤压标记
         delete (conflictTask as any)._isSqueezed
+        allConflictsResolved = false
         continue
       }
 
@@ -2097,10 +2166,11 @@ const resolveConflicts = (
       const newEndHour = targetHour
       newStartHour = Math.max(0, newEndHour - conflictHours)
 
-      // ✅ Bug Fix 3: 检查是否会触顶
+      // ✅ Bug Fix 3: 检查是否会触顶，如果会则标记为解决失败
       if (newStartHour < 0) {
-        console.log('[Timeline] 推动会导致触顶，阻止推动:', conflictTaskId)
+        console.log('[Timeline] 推动会导致触顶，无法解决冲突:', conflictTaskId)
         delete (conflictTask as any)._isSqueezed
+        allConflictsResolved = false
         continue
       }
     }
@@ -2142,7 +2212,8 @@ const resolveConflicts = (
       })
 
       // ✅ Bug Fix: 递归解决连锁冲突时，传递原始日期参数
-      resolveConflicts(
+      // 如果连锁冲突解决失败，也标记为整体失败
+      const chainResolved = resolveConflicts(
         task,
         newStartHour,
         newConflicts,
@@ -2150,8 +2221,15 @@ const resolveConflicts = (
         depth + 1,
         targetDate  // 传递原始日期，确保连锁推动不会跨日期
       )
+
+      if (!chainResolved) {
+        allConflictsResolved = false
+      }
     }
   }
+
+  // ✅ Bug Fix 3: 返回冲突解决状态
+  return allConflictsResolved
 }
 
 // 卡片拖动功能（改进版 - 支持垂直移动和智能冲突解决）
@@ -2329,7 +2407,16 @@ const handleCardDragMove = (event: MouseEvent) => {
 
   // 正常移动逻辑：检查冲突
   // ✅ Bug Fix: 使用 taskId 而不是 commissionId，正确排除同一订单的其他子任务
-  const conflicts = checkTaskConflict(task, newStartDate, newStartHour, task.taskId || task.commissionId)
+  const allConflicts = checkTaskConflict(task, newStartDate, newStartHour, task.taskId || task.commissionId)
+
+  // ✨ Bug Fix 4: 过滤掉可以合并的冲突（同一commission的子任务不应该互相推动）
+  // 同一commission的子任务只能通过按住0.5秒来合并，不会互相推动
+  const conflicts = allConflicts.filter(conflictTask => !canMergeTasks(task, conflictTask))
+
+  // 如果有可合并的冲突，记录日志
+  if (allConflicts.length > conflicts.length) {
+    console.log('[Timeline] 过滤掉可合并的冲突任务:', allConflicts.length - conflicts.length, '个（同一commission的子任务）')
+  }
 
   // ✨ 检查是否会导致边界溢出（包含连锁推动检测）
   const overflowResult = conflicts.length > 0
@@ -2400,7 +2487,16 @@ const handleCardDragMove = (event: MouseEvent) => {
 
   // ✅ 智能解决冲突（只在不溢出的情况下）
   if (conflicts.length > 0 && !overflowResult.willOverflow) {
-    resolveConflicts(task, newStartHour, conflicts, new Set(), 0, newStartDate)
+    const conflictsResolved = resolveConflicts(task, newStartHour, conflicts, new Set(), 0, newStartDate)
+
+    if (!conflictsResolved) {
+      // ✅ Bug Fix 3: 冲突解决失败，存在无法推动的任务，标记为无效放置
+      isInvalidPlacement.value = true
+      ;(task as any)._isInvalid = true
+      console.log('[Timeline] 无效放置：冲突解决失败，存在无法推动的任务')
+      // 不更新位置，保持原位
+      return
+    }
   }
 
   hasUnsavedChanges.value = true
@@ -2846,24 +2942,6 @@ const loadSchedulerData = async () => {
       }))
     })
 
-    // 🔍 DEBUG: 立即检查子任务和连线数据
-    const subTasksCount = scheduledTasks.value.filter(t => t.parentTaskId).length
-    const connectionsCount = getTaskConnections().length
-    console.log('🔍 [Timeline] 加载后数据验证:', {
-      总任务数: scheduledTasks.value.length,
-      子任务数: subTasksCount,
-      连接线数: connectionsCount,
-      子任务详情: scheduledTasks.value
-        .filter(t => t.parentTaskId)
-        .map(t => ({
-          taskId: t.taskId,
-          parentTaskId: t.parentTaskId,
-          subTaskIndex: t.subTaskIndex,
-          subTaskCount: t.subTaskCount,
-          startHour: (t as ExtendedScheduledTask).startHour
-        }))
-    })
-
     // BUG FIX 6: 检查并修复缺失的子任务计数
     const subTaskGroups = new Map<string, ScheduledTask[]>()
     scheduledTasks.value.forEach(task => {
@@ -3232,7 +3310,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px;
+  padding: 14px 24px;
   border-bottom: 1px solid #2a2a2a;
 }
 
@@ -3250,14 +3328,14 @@ onBeforeUnmount(() => {
 
 .view-tabs {
   border-bottom: 1px solid #2a2a2a;
-  padding: 0 24px;
+  padding: 0 24px 0 24px;
 }
 
 .timeline-controls {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 24px;
+  padding: 10px 24px;
   border-bottom: 1px solid #2a2a2a;
 }
 
@@ -3329,6 +3407,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden; /* 默认隐藏溢出 */
   flex: 1;
+  padding: 8px !important; /* 缩小排单表格与边栏的距离 */
 }
 
 /* 按月模式下开启横向滚动 */
@@ -3992,7 +4071,7 @@ onBeforeUnmount(() => {
   transition: background 0.2s;
   font-size: 10px;
   color: #666;
-  min-height: 30px; /* 最小高度 */
+  min-height: 45px; /* 最小高度 */
 }
 
 .time-label-item:hover {
@@ -4035,7 +4114,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   border-bottom: 2px solid #333;
   position: relative;
-  min-height: 30px; /* 最小高度 */
+  min-height: 45px; /* 最小高度 */
 }
 
 /* grid-day-column在排单视图中的特殊样式 */
@@ -4109,6 +4188,45 @@ onBeforeUnmount(() => {
 .scheduled-task-card.is-squeezed {
   animation: squeeze 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* ✨ 小卡片悬停展开优化 */
+/* 小卡片默认隐藏部分信息 */
+.scheduled-task-card.is-small-card .task-card-subtitle {
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 0.25s ease, max-height 0.25s ease;
+  margin: 0;
+}
+
+.scheduled-task-card.is-small-card .task-card-meta {
+  gap: 2px;
+}
+
+/* 小卡片悬停时：放大显示并展开所有信息 */
+.scheduled-task-card.is-small-card:hover {
+  transform: scale(1.2) !important; /* 放大到1.2倍 */
+  z-index: 1000 !important; /* 确保在最上层 */
+  box-shadow: 0 12px 40px rgba(139, 92, 246, 0.6) !important; /* 增强阴影 */
+}
+
+.scheduled-task-card.is-small-card:hover .task-card-subtitle {
+  opacity: 1;
+  max-height: 50px;
+  margin-bottom: 4px;
+}
+
+/* 防止拖动和拉伸时触发悬停效果 */
+.scheduled-task-card.is-small-card.is-dragging:hover,
+.scheduled-task-card.is-small-card.is-resizing:hover {
+  transform: scale(1) !important;
+}
+
+.scheduled-task-card.is-small-card.is-dragging:hover .task-card-subtitle {
+  opacity: 0;
+  max-height: 0;
+}
+
 
 /* 添加抖动警告动效 */
 @keyframes shake {
@@ -4495,6 +4613,56 @@ onBeforeUnmount(() => {
   color: #e0e0e0;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+/* 图标旋转动画 */
+@keyframes icon-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.icon-spin {
+  animation: icon-spin 1s linear infinite;
+}
+
+/* 工具提示样式 */
+.task-tooltip-content {
+  padding: 0;
+  font-size: 13px;
+  max-width: 300px;
+}
+
+.tooltip-row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  color: #e0e0e0;
+  line-height: 1.4;
+}
+
+.tooltip-row strong {
+  color: #aaa;
+  font-weight: 600;
+  min-width: 70px;
+  flex-shrink: 0;
+}
+
+.tooltip-row:first-child {
+  padding-top: 0;
+}
+
+.tooltip-row:last-child {
+  padding-bottom: 0;
+}
+
+.tooltip-divider {
+  height: 1px;
+  background: #2a2a2a;
+  margin: 8px 0;
 }
 </style>
 

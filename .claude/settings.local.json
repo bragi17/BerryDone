@@ -6,7 +6,12 @@
       "Bash(powershell:*)",
       "Bash(npx tsx:*)",
       "Bash(git remote add:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(git push:*)",
+      "Bash(git config:*)",
+      "Bash(timeout 60 git push)"
     ],
     "deny": [],
     "ask": []

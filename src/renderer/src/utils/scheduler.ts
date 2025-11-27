@@ -282,10 +282,12 @@ export function allocateWorkDays(
  */
 
 /**
- * 智能排单算法 - 贪心填充版本
+ * 智能排单算法 - 优化版（尽量填满每一天）
  *
- * 输入：待排订单列表、日历配置、选项
- * 输出：排单结果
+ * 策略：
+ * 1. 按优先级排序任务（高优先级优先）
+ * 2. 逐天填充：对每一天，尽量填满可用工时
+ * 3. 装箱优化：每天优先分配高优先级任务，然后用低优先级任务填充碎片时间
  *
  * @param commissions - VGen Commissions 列表
  * @param config - 日历配置
@@ -299,124 +301,106 @@ export function scheduleCommissions(
   options: ScheduleOptions = DEFAULT_SCHEDULE_OPTIONS,
   workHoursConfig?: WorkHoursConfig | null
 ): ScheduledTask[] {
-  // Step 1: 过滤出需要排单的订单（READY 和 WIP）
+  // Step 1: 过滤出需要排单的订单（IN_PROGRESS 和 PENDING）
   const pendingTasks = commissions.filter(
     c => c.status === 'IN_PROGRESS' || c.status === 'PENDING'
   )
 
   // Step 2: 计算每个订单的优先级并排序
-  const tasksWithPriority = pendingTasks.map(comm => ({
+  interface TaskWithPriority {
+    commission: VGenCommission
+    priorityScore: number
+    remainingHours: number
+    parentTaskId: string
+  }
+
+  const tasksWithPriority: TaskWithPriority[] = pendingTasks.map(comm => ({
     commission: comm,
     priorityScore: calculatePriority(comm, options.priorityWeights),
-    remainingHours: getCommissionWorkHours(comm, workHoursConfig)
+    remainingHours: getCommissionWorkHours(comm, workHoursConfig),
+    parentTaskId: `task-${comm.id}-${Date.now()}`
   }))
 
   // 按优先级降序排序
   tasksWithPriority.sort((a, b) => b.priorityScore - a.priorityScore)
 
-  // Step 3: 贪心填充算法 - 使用日历跟踪每天的剩余工时
+  // Step 3: 逐天填充算法 - 尽量填满每一天
   const result: ScheduledTask[] = []
   const dailySchedule: Map<string, number> = new Map() // 日期 -> 已使用工时
+  const MIN_SUBTASK_HOURS = 1.0 // 最小子任务工时
+
   let currentDate = options.startFrom || getTodayString()
+  let safety = 0
+  const maxIterations = 365
 
-  // 处理每个订单
+  // 过滤掉已完成的任务（remainingHours <= 0）
+  const activeTasks = tasksWithPriority.filter(t => t.remainingHours > 0)
+
+  // 逐天填充
+  while (activeTasks.some(t => t.remainingHours > 0) && safety < maxIterations) {
+    safety++
+
+    // 跳过休息日和周末
+    if (config.restDays.includes(currentDate) || (config.weekendRest && isWeekend(currentDate))) {
+      currentDate = addDays(currentDate, 1)
+      continue
+    }
+
+    // 获取当天的可用工时
+    const dayMaxHours = config.workHoursPerDay[currentDate] || config.defaultWorkHours
+    let dayRemainingHours = dayMaxHours
+
+    // 对这一天，按优先级顺序尽量填满
+    for (const taskData of activeTasks) {
+      if (taskData.remainingHours <= 0 || dayRemainingHours < MIN_SUBTASK_HOURS) {
+        continue // 任务已完成或这天空间不足
+      }
+
+      // 计算这一天可以分配给这个任务多少小时
+      const allocateHours = Math.min(taskData.remainingHours, dayRemainingHours)
+
+      // 只有工时 >= 1小时才分配
+      if (allocateHours >= MIN_SUBTASK_HOURS) {
+        // 创建子任务
+        const subTask: SubTaskAllocation = {
+          workDays: [currentDate],
+          hoursPerDay: { [currentDate]: allocateHours },
+          totalHours: allocateHours,
+          startDate: currentDate,
+          endDate: currentDate
+        }
+
+        // 更新剩余工时
+        taskData.remainingHours -= allocateHours
+        dayRemainingHours -= allocateHours
+
+        // 记录到日历
+        const usedHours = dailySchedule.get(currentDate) || 0
+        dailySchedule.set(currentDate, usedHours + allocateHours)
+
+        // 添加到结果（暂时存储，后续统一处理）
+        if (!taskData['subTasks']) {
+          taskData['subTasks'] = []
+        }
+        taskData['subTasks'].push(subTask)
+      }
+    }
+
+    // 移动到下一天
+    currentDate = addDays(currentDate, 1)
+  }
+
+  // Step 4: 将累积的子任务转换为ScheduledTask对象
   for (const taskData of tasksWithPriority) {
-    const { commission, priorityScore } = taskData
-    let remainingHours = taskData.remainingHours
+    const subTasks = taskData['subTasks'] as SubTaskAllocation[] | undefined
 
-    if (remainingHours <= 0) continue
-
-    // 生成唯一的父任务ID
-    const parentTaskId = `task-${commission.id}-${Date.now()}`
-    const subTasks: SubTaskAllocation[] = []
-
-    // 当前子任务
-    let currentSubTask: SubTaskAllocation | null = null
-    let searchDate = currentDate
-    let safety = 0
-    const maxIterations = 365
-
-    // 填充任务到可用的时间槽
-    while (remainingHours > 0 && safety < maxIterations) {
-      safety++
-
-      // 跳过休息日和周末
-      while ((config.restDays.includes(searchDate) ||
-              (config.weekendRest && isWeekend(searchDate))) &&
-             safety < maxIterations) {
-        // 如果当前有子任务在进行，结束它
-        if (currentSubTask && currentSubTask.workDays.length > 0) {
-          currentSubTask.endDate = currentSubTask.workDays[currentSubTask.workDays.length - 1]
-          subTasks.push(currentSubTask)
-          currentSubTask = null
-        }
-        searchDate = addDays(searchDate, 1)
-        safety++
-      }
-
-      if (safety >= maxIterations) break
-
-      // 获取当天的可用工时
-      const dayMaxHours = config.workHoursPerDay[searchDate] || config.defaultWorkHours
-      const usedHours = dailySchedule.get(searchDate) || 0
-      const availableHours = dayMaxHours - usedHours
-
-      if (availableHours <= 0) {
-        // 这一天已满，移动到下一天
-        if (currentSubTask && currentSubTask.workDays.length > 0) {
-          currentSubTask.endDate = currentSubTask.workDays[currentSubTask.workDays.length - 1]
-          subTasks.push(currentSubTask)
-          currentSubTask = null
-        }
-        searchDate = addDays(searchDate, 1)
-        continue
-      }
-
-      // 计算这一天可以分配多少小时
-      const allocateHours = Math.min(remainingHours, availableHours)
-
-      // 创建或更新子任务
-      if (!currentSubTask) {
-        currentSubTask = {
-          workDays: [],
-          hoursPerDay: {},
-          totalHours: 0,
-          startDate: searchDate,
-          endDate: searchDate
-        }
-      }
-
-      // 记录这一天的工时分配
-      currentSubTask.workDays.push(searchDate)
-      currentSubTask.hoursPerDay[searchDate] = allocateHours
-      currentSubTask.totalHours += allocateHours
-      currentSubTask.endDate = searchDate
-
-      // 更新日历
-      dailySchedule.set(searchDate, usedHours + allocateHours)
-      remainingHours -= allocateHours
-
-      // 如果这一天用满了，准备创建新的子任务
-      if (usedHours + allocateHours >= dayMaxHours) {
-        if (currentSubTask && currentSubTask.workDays.length > 0) {
-          subTasks.push(currentSubTask)
-          currentSubTask = null
-        }
-        searchDate = addDays(searchDate, 1)
-      }
-
-      // 更新全局的currentDate，让下一个任务从合适的位置开始
-      if (!dailySchedule.has(currentDate) ||
-          (dailySchedule.get(currentDate) || 0) >=
-          (config.workHoursPerDay[currentDate] || config.defaultWorkHours)) {
-        currentDate = searchDate
-      }
+    if (!subTasks || subTasks.length === 0) {
+      continue // 跳过没有分配到工时的任务
     }
 
-    // 处理最后一个子任务
-    if (currentSubTask && currentSubTask.workDays.length > 0) {
-      subTasks.push(currentSubTask)
-    }
+    const commission = taskData.commission
+    const priorityScore = taskData.priorityScore
+    const parentTaskId = taskData.parentTaskId
 
     // 创建ScheduledTask对象
     if (subTasks.length > 1) {
@@ -481,6 +465,11 @@ export function scheduleCommissions(
     } else if (subTasks.length === 1) {
       // 单个任务（未拆分）
       const subTask = subTasks[0]
+
+      // ✅ BUG FIX 5: 检查单个任务是否也满足最小工时要求
+      if (subTask.totalHours < MIN_SUBTASK_HOURS) {
+        continue  // 跳过工时不足1小时的任务
+      }
 
       // BUG FIX: 同样为单个任务分配合适的垂直位置
       let startHour = 9

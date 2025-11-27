@@ -164,18 +164,23 @@ interface VGenCommission {
 }
 
 const vgenCommissions = ref<VGenCommission[]>([])
-const selectedYear = ref(2024)
+const selectedYear = ref(new Date().getFullYear()) // 自动设置为当前年份
 
-const yearOptions = [
-  { label: '2024', value: 2024 },
-  { label: '2025', value: 2025 }
-]
+// 动态生成年份选项（当前年份及前后各一年）
+const yearOptions = computed(() => {
+  const currentYear = new Date().getFullYear()
+  return [
+    { label: String(currentYear - 1), value: currentYear - 1 },
+    { label: String(currentYear), value: currentYear },
+    { label: String(currentYear + 1), value: currentYear + 1 }
+  ]
+})
 
 onMounted(async () => {
   try {
     const commissions = await window.api.db.getVGenCommissions()
     vgenCommissions.value = commissions
-    console.log(`Dashboard loaded ${commissions.length} commissions`)
+    console.log(`Dashboard loaded ${commissions.length} commissions for year ${selectedYear.value}`)
   } catch (error) {
     console.error('Failed to load commissions:', error)
   }
@@ -408,9 +413,11 @@ const formatDate = (dateStr?: string) => {
 
 .revenue-bar {
   flex: 1;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-end;
   position: relative;
 }
 
