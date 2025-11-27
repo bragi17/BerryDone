@@ -149,6 +149,15 @@
             </template>
             {{ isScheduling ? '排单中...' : '运行智能排单' }}
           </n-button>
+          <n-button
+            quaternary
+            @click="showPrioritySettings = true"
+          >
+            <template #icon>
+              <n-icon :component="SettingsOutline" />
+            </template>
+            优先级设置
+          </n-button>
           <n-button quaternary @click="saveSchedulerConfig">
             保存配置
           </n-button>
@@ -274,32 +283,49 @@
                           'is-sub-task': task.parentTaskId !== undefined,
                           '_isMergeTarget': (task as any)._isMergeTarget,
                           '_isMergeReady': (task as any)._isMergeReady,
-                          'is-small-card': isSmallCard(task)
+                          'is-small-card': isSmallCard(task),
+                          'is-locked': task.status === TaskStatus.LOCKED,
+                          'is-completed': task.status === TaskStatus.COMPLETED
                         }"
                         :style="getScheduledTaskStyle(task)"
                         @mousedown="handleCardDragStart($event, task)"
                         @click="handleScheduledTaskClick(task)"
+                        @contextmenu.prevent="handleCardRightClick($event, task)"
                       >
                         <!-- 上方拉伸手柄 -->
                         <div
+                          v-if="task.status !== TaskStatus.LOCKED && task.status !== TaskStatus.COMPLETED"
                           class="card-resize-handle card-resize-top"
                           @mousedown.stop="handleCardResizeStart($event, task, 'top')"
                         >
                           <div class="resize-indicator"></div>
                         </div>
 
+                        <!-- 状态徽章 (优雅设计) -->
+                        <div class="task-status-badge" :class="`status-${(task.status || TaskStatus.NORMAL).toLowerCase()}`">
+                          <!-- 锁定状态图标 -->
+                          <svg v-if="task.status === TaskStatus.LOCKED" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="5" y="11" width="14" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                          </svg>
+                          <!-- 完成状态图标 -->
+                          <svg v-else-if="task.status === TaskStatus.COMPLETED" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="8 12 11 15 16 9"/>
+                          </svg>
+                          <!-- 普通状态图标 -->
+                          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="9" y1="13" x2="15" y2="13"/>
+                            <line x1="9" y1="17" x2="15" y2="17"/>
+                          </svg>
+                        </div>
+
                         <div class="task-card-header">
                           <div class="task-card-title">
                             {{ getCommissionById(task.commissionId)?.clientName }}
                           </div>
-                          <n-tag
-                            v-if="task.isLocked"
-                            type="warning"
-                            size="small"
-                            :bordered="false"
-                          >
-                            🔒
-                          </n-tag>
                         </div>
                         <div class="task-card-subtitle">
                           {{ getCommissionById(task.commissionId)?.projectName }}
@@ -334,6 +360,7 @@
 
                         <!-- 下方拉伸手柄 -->
                         <div
+                          v-if="task.status !== TaskStatus.LOCKED && task.status !== TaskStatus.COMPLETED"
                           class="card-resize-handle card-resize-bottom"
                           @mousedown.stop="handleCardResizeStart($event, task, 'bottom')"
                         >
@@ -682,6 +709,15 @@
         </div>
       </template>
     </n-modal>
+
+    <!-- 优先级设置对话框 -->
+    <PrioritySettings
+      v-model:show="showPrioritySettings"
+      :config="priorityConfig"
+      :services="vgenServices"
+      :commissions="vgenCommissions"
+      @save="handleSavePriorityConfig"
+    />
   </div>
 </template>
 
@@ -721,13 +757,15 @@ import {
   EllipseOutline,
   RefreshOutline,
   SyncOutline,
-  InformationCircleOutline
+  InformationCircleOutline,
+  SettingsOutline
 } from '@vicons/ionicons5'
 import TaskCard from '../components/TaskCard.vue'
 import TaskDialog from '../components/TaskDialog.vue'
+import PrioritySettings from '../components/PrioritySettings.vue'
 import { useStore, Task, taskStatusConfig } from '../store'
 import { parseDateString, formatDateString, getTodayString } from '../utils/dateUtils'
-import { scheduleCommissions, type ScheduledTask, type SchedulerConfig, DEFAULT_SCHEDULER_CONFIG } from '../utils/scheduler'
+import { scheduleCommissions, type ScheduledTask, type SchedulerConfig, type PriorityConfig, DEFAULT_SCHEDULER_CONFIG, DEFAULT_PRIORITY_CONFIG, TaskStatus } from '../utils/scheduler'
 import type { VGenCommission } from '../store'
 
 const store = useStore()
@@ -786,11 +824,14 @@ interface VGenCommission {
 
 const vgenCommissions = ref<VGenCommission[]>([])
 const vgenDataLoaded = ref(false)
+const vgenServices = ref<any[]>([])
 
 // 智能排单相关状态
 const schedulerConfig = ref<SchedulerConfig>(DEFAULT_SCHEDULER_CONFIG)
 const scheduledTasks = ref<ScheduledTask[]>([])
 const schedulerLoaded = ref(false)
+const priorityConfig = ref<PriorityConfig>(DEFAULT_PRIORITY_CONFIG)
+const showPrioritySettings = ref(false)
 const isScheduling = ref(false)
 const schedulerCurrentDate = ref(new Date()) // 排单视图的当前日期
 const schedulerViewMode = ref<'week' | 'month'>('week') // 视图模式：周/月
@@ -2232,8 +2273,75 @@ const resolveConflicts = (
   return allConflictsResolved
 }
 
+// 右键点击切换任务状态
+const handleCardRightClick = (event: MouseEvent, task: ScheduledTask) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  // 获取任务索引
+  const taskIndex = scheduledTasks.value.findIndex(t => {
+    const tId = t.taskId || t.commissionId
+    const taskId = task.taskId || task.commissionId
+    return tId === taskId
+  })
+
+  if (taskIndex === -1) return
+
+  // 如果首次交互，保存所有任务的备份
+  if (!hasUnsavedChanges.value) {
+    modifiedTasksBackup.value = JSON.parse(JSON.stringify(scheduledTasks.value))
+  }
+
+  const currentTask = scheduledTasks.value[taskIndex]
+  const currentStatus = currentTask.status || TaskStatus.NORMAL
+
+  // 循环切换状态：NORMAL -> LOCKED -> COMPLETED -> NORMAL
+  let newStatus: TaskStatus
+  switch (currentStatus) {
+    case TaskStatus.NORMAL:
+      newStatus = TaskStatus.LOCKED
+      break
+    case TaskStatus.LOCKED:
+      newStatus = TaskStatus.COMPLETED
+      break
+    case TaskStatus.COMPLETED:
+      newStatus = TaskStatus.NORMAL
+      break
+    default:
+      newStatus = TaskStatus.NORMAL
+  }
+
+  // 更新任务状态
+  currentTask.status = newStatus
+
+  // 同步更新isLocked字段（保持兼容性）
+  currentTask.isLocked = (newStatus === TaskStatus.LOCKED || newStatus === TaskStatus.COMPLETED)
+
+  hasUnsavedChanges.value = true
+
+  // 显示提示消息
+  const statusNames = {
+    [TaskStatus.NORMAL]: '普通状态 📋',
+    [TaskStatus.LOCKED]: '锁定状态 🔒',
+    [TaskStatus.COMPLETED]: '完成状态 ✅'
+  }
+  message.success(`已切换为 ${statusNames[newStatus]}`)
+
+  console.log('[Timeline] 任务状态已切换:', {
+    taskId: task.taskId || task.commissionId,
+    oldStatus: currentStatus,
+    newStatus: newStatus
+  })
+}
+
 // 卡片拖动功能（改进版 - 支持垂直移动和智能冲突解决）
 const handleCardDragStart = (event: MouseEvent, task: ScheduledTask) => {
+  // ✨ 检查任务状态：锁定和完成状态不允许跨日期拖拽
+  if (task.status === TaskStatus.LOCKED || task.status === TaskStatus.COMPLETED) {
+    message.warning('此任务已锁定或完成，无法拖拽到其他日期')
+    return
+  }
+
   // ✨ 如果正在进行其他操作，不启动拖动
   if (currentOperation.value !== null) {
     console.log('[Timeline] 操作进行中，忽略拖拽:', currentOperation.value)
@@ -3159,20 +3267,23 @@ const runScheduling = async () => {
       console.error('[Timeline] 加载工时配置失败:', error)
     }
 
-    // 运行排单算法
+    // 运行排单算法（包含优先级配置）
     const result = scheduleCommissions(
       vgenCommissions.value,
       schedulerConfig.value,
       {
         startFrom: getTodayString(),
         priorityWeights: {
-          dueDate: 1,
-          status: 1,
-          payment: 1,
-          manual: 0
+          dueDate: 0.4,
+          status: 0.3,
+          payment: 0.1,
+          manual: 0.2 // 启用手动优先级权重
         }
       },
-      workHoursConfig
+      workHoursConfig,
+      priorityConfig.value, // 传递优先级配置
+      vgenServices.value, // 传递服务列表
+      scheduledTasks.value // 传递现有的排单任务，保留锁定和完成状态的任务
     )
 
     // 确保结果是纯 JSON 对象（移除任何无法序列化的属性）
@@ -3186,6 +3297,19 @@ const runScheduling = async () => {
     message.error(`排单失败: ${error.message}`)
   } finally {
     isScheduling.value = false
+  }
+}
+
+// 保存优先级配置
+const handleSavePriorityConfig = async (config: PriorityConfig) => {
+  try {
+    await window.api.scheduler.savePriorityConfig(config)
+    priorityConfig.value = config
+    message.success('优先级设置已保存')
+    console.log('✅ 保存优先级配置:', config)
+  } catch (error: any) {
+    console.error('保存优先级配置失败:', error)
+    message.error(`保存失败: ${error.message}`)
   }
 }
 
@@ -3241,8 +3365,28 @@ onMounted(async () => {
     console.error('加载 VGen commissions 失败:', error)
   }
 
+  // 加载 VGen Services 数据
+  try {
+    const services = await window.api.db.getVGenServices()
+    vgenServices.value = services
+    console.log(`✅ 加载了 ${services.length} 个 VGen services`)
+  } catch (error) {
+    console.error('加载 VGen services 失败:', error)
+  }
+
   // 加载智能排单数据
   await loadSchedulerData()
+
+  // 加载优先级配置
+  try {
+    const config = await window.api.scheduler.getPriorityConfig()
+    if (config) {
+      priorityConfig.value = config
+      console.log('✅ 加载优先级配置:', config)
+    }
+  } catch (error) {
+    console.error('加载优先级配置失败:', error)
+  }
 
   // 监听更新进度
   window.api.vgen.onUpdateProgress((progress) => {
@@ -4383,6 +4527,86 @@ onBeforeUnmount(() => {
 
 .scheduled-task-card.is-modified::before {
   background: linear-gradient(90deg, #F59E0B 0%, #EF4444 100%);
+}
+
+/* 状态徽章 - 优雅设计 */
+.task-status-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 20;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.task-status-badge svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.5;
+}
+
+/* 普通状态徽章 */
+.task-status-badge.status-normal {
+  background: linear-gradient(135deg, #6B7280 0%, #4B5563 100%);
+  color: #F9FAFB;
+  border: 2px solid #374151;
+}
+
+/* 锁定状态徽章 */
+.task-status-badge.status-locked {
+  background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+  color: #FFFBEB;
+  border: 2px solid #B45309;
+}
+
+/* 完成状态徽章 */
+.task-status-badge.status-completed {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: #ECFDF5;
+  border: 2px solid #047857;
+}
+
+/* 悬停效果 */
+.scheduled-task-card:hover .task-status-badge {
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* 锁定状态卡片样式 - 虚线边框 */
+.scheduled-task-card.is-locked {
+  border: 2px dashed #F59E0B;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0.02) 100%);
+  cursor: not-allowed;
+}
+
+.scheduled-task-card.is-locked::before {
+  background: linear-gradient(90deg, #F59E0B 0%, #D97706 100%);
+  height: 3px;
+}
+
+/* 完成状态卡片样式 - 点状边框 */
+.scheduled-task-card.is-completed {
+  border: 2px dotted #10B981;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0.02) 100%);
+  opacity: 0.85;
+}
+
+.scheduled-task-card.is-completed::before {
+  background: linear-gradient(90deg, #10B981 0%, #059669 100%);
+  height: 3px;
+}
+
+/* 普通状态卡片 - 细实线边框 */
+.scheduled-task-card:not(.is-locked):not(.is-completed) {
+  border: 1px solid #2a2a2a;
 }
 
 /* 卡片拉伸手柄 */

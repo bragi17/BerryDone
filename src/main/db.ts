@@ -4,7 +4,8 @@ import { join } from 'path'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import { VGenService } from './types/vgen-service'
-import type { SchedulerState } from './types/scheduler'
+import type { SchedulerState, PriorityConfig } from './types/scheduler'
+import { DEFAULT_PRIORITY_CONFIG } from './types/scheduler'
 
 export interface Task {
   id: string
@@ -65,6 +66,7 @@ export interface Database {
   vgenServices: VGenService[] // VGen 服务列表
   schedulerState?: SchedulerState // 智能排单状态
   workHoursConfig?: WorkHoursConfig // 工时配置
+  priorityConfig?: PriorityConfig // 优先级配置
 }
 
 // 工时配置
@@ -116,6 +118,12 @@ export async function initDB(): Promise<Low<Database>> {
       categoryDefaults: {},
       serviceOverrides: {}
     }
+    await db.write()
+  }
+
+  // 确保 priorityConfig 存在
+  if (!db.data.priorityConfig) {
+    db.data.priorityConfig = DEFAULT_PRIORITY_CONFIG
     await db.write()
   }
 

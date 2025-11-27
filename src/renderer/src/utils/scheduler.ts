@@ -7,11 +7,14 @@ import type {
   SchedulerConfig,
   ScheduledTask,
   ScheduleOptions,
-  CalendarDay
+  CalendarDay,
+  PriorityConfig
 } from '../types/scheduler'
 import {
   DEFAULT_SCHEDULE_OPTIONS,
-  DEFAULT_SCHEDULER_CONFIG
+  DEFAULT_SCHEDULER_CONFIG,
+  DEFAULT_PRIORITY_CONFIG,
+  TaskStatus
 } from '../types/scheduler'
 import { parseDateString, formatDateString, getTodayString } from './dateUtils'
 
@@ -23,8 +26,8 @@ export interface WorkHoursConfig {
 }
 
 // 重新导出类型和常量
-export type { SchedulerConfig, ScheduledTask, ScheduleOptions, CalendarDay }
-export { DEFAULT_SCHEDULE_OPTIONS, DEFAULT_SCHEDULER_CONFIG }
+export type { SchedulerConfig, ScheduledTask, ScheduleOptions, CalendarDay, PriorityConfig }
+export { DEFAULT_SCHEDULE_OPTIONS, DEFAULT_SCHEDULER_CONFIG, DEFAULT_PRIORITY_CONFIG, TaskStatus }
 
 /**
  * 工时计算辅助函数
@@ -116,11 +119,15 @@ interface PriorityWeights {
  *
  * @param comm - VGen Commission
  * @param weights - 权重配置
+ * @param priorityConfig - 手动优先级配置
+ * @param services - 服务列表（用于获取category）
  * @returns 优先级分数（0-100）
  */
 export function calculatePriority(
   comm: VGenCommission,
-  weights: PriorityWeights = DEFAULT_SCHEDULE_OPTIONS.priorityWeights!
+  weights: PriorityWeights = DEFAULT_SCHEDULE_OPTIONS.priorityWeights!,
+  priorityConfig?: PriorityConfig,
+  services?: any[]
 ): number {
   let score = 0
 
@@ -133,10 +140,24 @@ export function calculatePriority(
 
   // 状态优先 (0-30分)
   if (weights.status > 0) {
-    if (comm.status === 'IN_PROGRESS') {
-      score += 30 * weights.status // WIP 优先
-    } else if (comm.status === 'PENDING') {
-      score += 10 * weights.status // READY 次之
+    // 使用手动配置的状态优先级，如果有的话
+    if (priorityConfig) {
+      if (comm.status === 'IN_PROGRESS') {
+        // WIP: 使用配置的 wipPriority (1-10) 转换为 0-30 分
+        const wipScore = (priorityConfig.wipPriority / 10) * 30
+        score += wipScore * weights.status
+      } else if (comm.status === 'PENDING') {
+        // Ready: 使用配置的 readyPriority (1-10) 转换为 0-30 分
+        const readyScore = (priorityConfig.readyPriority / 10) * 30
+        score += readyScore * weights.status
+      }
+    } else {
+      // Fallback 到默认逻辑
+      if (comm.status === 'IN_PROGRESS') {
+        score += 30 * weights.status // WIP 优先
+      } else if (comm.status === 'PENDING') {
+        score += 10 * weights.status // READY 次之
+      }
     }
   }
 
@@ -145,10 +166,49 @@ export function calculatePriority(
     score += 20 * weights.payment
   }
 
-  // TODO: 手动优先级（未来扩展）
-  // if (comm.manualPriority) {
-  //   score += comm.manualPriority * weights.manual
-  // }
+  // 手动优先级配置 (0-100分)
+  if (priorityConfig && weights.manual && weights.manual > 0) {
+    let manualScore = 0
+
+    // 1. 截止日期优先级 (1-10 -> 0-25分)
+    if (comm.dueDate) {
+      manualScore += (priorityConfig.deadlinePriority / 10) * 25
+    }
+
+    // 2. 接单时间优先级 (1-10 -> 0-20分)
+    // 越早接单的越优先
+    if (comm.startDate) {
+      const orderDaysAgo = daysBetween(parseDateString(comm.startDate), new Date())
+      const orderUrgency = Math.min(20, orderDaysAgo * 0.5) // 每天增加0.5分，最多20分
+      manualScore += (priorityConfig.orderTimePriority / 10) * orderUrgency
+    }
+
+    // 3. 费用优先级 (1-10 -> 0-25分)
+    // 费用越高越优先
+    if (comm.totalCost) {
+      // 假设1000USD为基准，超过1000每增加100增加1分，最多25分
+      const costScore = Math.min(25, (comm.totalCost / 100) * 2.5)
+      manualScore += (priorityConfig.costPriority / 10) * costScore
+    }
+
+    // 4. 服务优先级 (1-10 -> 0-30分)
+    let servicePriorityScore = 1 // 默认1
+
+    // 优先使用服务特定优先级
+    if (comm.serviceID && priorityConfig.servicePriorities[comm.serviceID]) {
+      servicePriorityScore = priorityConfig.servicePriorities[comm.serviceID]
+    } else if (services && comm.serviceID) {
+      // 查找服务的分类
+      const service = services.find(s => s.serviceId === comm.serviceID || s.id === comm.serviceID)
+      if (service && service.category && priorityConfig.categoryPriorities[service.category]) {
+        servicePriorityScore = priorityConfig.categoryPriorities[service.category]
+      }
+    }
+
+    manualScore += (servicePriorityScore / 10) * 30
+
+    score += manualScore * weights.manual
+  }
 
   return score
 }
@@ -293,17 +353,30 @@ export function allocateWorkDays(
  * @param config - 日历配置
  * @param options - 排单选项
  * @param workHoursConfig - 工时配置（可选）
+ * @param priorityConfig - 手动优先级配置（可选）
+ * @param services - 服务列表（可选，用于获取category）
  * @returns 排单结果列表
  */
 export function scheduleCommissions(
   commissions: VGenCommission[],
   config: SchedulerConfig,
   options: ScheduleOptions = DEFAULT_SCHEDULE_OPTIONS,
-  workHoursConfig?: WorkHoursConfig | null
+  workHoursConfig?: WorkHoursConfig | null,
+  priorityConfig?: PriorityConfig | null,
+  services?: any[],
+  existingTasks?: ScheduledTask[]
 ): ScheduledTask[] {
-  // Step 1: 过滤出需要排单的订单（IN_PROGRESS 和 PENDING）
+  // 提取锁定和完成的任务（这些任务不会被重新排单）
+  const lockedTasks = (existingTasks || []).filter(
+    task => task.status === TaskStatus.LOCKED || task.status === TaskStatus.COMPLETED
+  )
+
+  // 获取已被锁定/完成任务占用的 commission IDs
+  const lockedCommissionIds = new Set(lockedTasks.map(task => task.commissionId))
+
+  // Step 1: 过滤出需要排单的订单（IN_PROGRESS 和 PENDING，且不在锁定任务中）
   const pendingTasks = commissions.filter(
-    c => c.status === 'IN_PROGRESS' || c.status === 'PENDING'
+    c => (c.status === 'IN_PROGRESS' || c.status === 'PENDING') && !lockedCommissionIds.has(c.id)
   )
 
   // Step 2: 计算每个订单的优先级并排序
@@ -316,7 +389,12 @@ export function scheduleCommissions(
 
   const tasksWithPriority: TaskWithPriority[] = pendingTasks.map(comm => ({
     commission: comm,
-    priorityScore: calculatePriority(comm, options.priorityWeights),
+    priorityScore: calculatePriority(
+      comm,
+      options.priorityWeights,
+      priorityConfig || undefined,
+      services
+    ),
     remainingHours: getCommissionWorkHours(comm, workHoursConfig),
     parentTaskId: `task-${comm.id}-${Date.now()}`
   }))
@@ -328,6 +406,14 @@ export function scheduleCommissions(
   const result: ScheduledTask[] = []
   const dailySchedule: Map<string, number> = new Map() // 日期 -> 已使用工时
   const MIN_SUBTASK_HOURS = 1.0 // 最小子任务工时
+
+  // 初始化：将锁定任务的工时计入日程表
+  lockedTasks.forEach(task => {
+    task.workDays.forEach(day => {
+      const hoursUsed = task.hoursPerDay[day] || 0
+      dailySchedule.set(day, (dailySchedule.get(day) || 0) + hoursUsed)
+    })
+  })
 
   let currentDate = options.startFrom || getTodayString()
   let safety = 0
@@ -417,6 +503,18 @@ export function scheduleCommissions(
 
         // 查找该天已经占用的时间段
         const dayOccupied: Array<{start: number, end: number}> = []
+        // 包括锁定任务
+        lockedTasks.forEach(existingTask => {
+          if (existingTask.workDays.includes(firstDay)) {
+            const existingStartHour = (existingTask as any).startHour ?? 9
+            const existingHours = existingTask.totalHours / existingTask.workDays.length
+            dayOccupied.push({
+              start: existingStartHour,
+              end: existingStartHour + existingHours
+            })
+          }
+        })
+        // 包括已排单的新任务
         result.forEach(existingTask => {
           if (existingTask.workDays.includes(firstDay)) {
             const existingStartHour = (existingTask as any).startHour ?? 9
@@ -478,6 +576,18 @@ export function scheduleCommissions(
 
       // 查找该天已经占用的时间段
       const dayOccupied: Array<{start: number, end: number}> = []
+      // 包括锁定任务
+      lockedTasks.forEach(existingTask => {
+        if (existingTask.workDays.includes(firstDay)) {
+          const existingStartHour = (existingTask as any).startHour ?? 9
+          const existingHours = existingTask.totalHours / existingTask.workDays.length
+          dayOccupied.push({
+            start: existingStartHour,
+            end: existingStartHour + existingHours
+          })
+        }
+      })
+      // 包括已排单的新任务
       result.forEach(existingTask => {
         if (existingTask.workDays.includes(firstDay)) {
           const existingStartHour = (existingTask as any).startHour ?? 9
@@ -519,7 +629,8 @@ export function scheduleCommissions(
     }
   }
 
-  return result
+  // 合并锁定任务和新排单的任务
+  return [...lockedTasks, ...result]
 }
 
 /**
@@ -531,6 +642,9 @@ export function scheduleCommissions(
  * @param existingTasks - 现有已排单任务
  * @param commissions - 所有订单
  * @param config - 日历配置
+ * @param workHoursConfig - 工时配置
+ * @param priorityConfig - 手动优先级配置
+ * @param services - 服务列表
  * @returns 新的排单任务
  */
 export function rescheduleTask(
@@ -538,7 +652,9 @@ export function rescheduleTask(
   existingTasks: ScheduledTask[],
   commissions: VGenCommission[],
   config: SchedulerConfig,
-  workHoursConfig?: WorkHoursConfig | null
+  workHoursConfig?: WorkHoursConfig | null,
+  priorityConfig?: PriorityConfig | null,
+  services?: any[]
 ): ScheduledTask | null {
   // 找到对应的 commission
   const commission = commissions.find(c => c.id === taskId)
@@ -576,7 +692,12 @@ export function rescheduleTask(
     hoursPerDay: allocation.hoursPerDay,
     totalHours: hoursNeeded,
     isLocked: false,
-    priorityScore: calculatePriority(commission)
+    priorityScore: calculatePriority(
+      commission,
+      DEFAULT_SCHEDULE_OPTIONS.priorityWeights,
+      priorityConfig || undefined,
+      services
+    )
   }
 }
 

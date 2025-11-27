@@ -20,6 +20,18 @@ export interface SchedulerConfig {
 }
 
 /**
+ * 任务状态枚举
+ */
+export enum TaskStatus {
+  /** 普通状态 - 可拖拽、拉伸，排单时可变 */
+  NORMAL = 'NORMAL',
+  /** 锁定状态 - 不可拉伸、不可跨日拖拽，排单时不变 */
+  LOCKED = 'LOCKED',
+  /** 完成状态 - 同锁定状态 */
+  COMPLETED = 'COMPLETED'
+}
+
+/**
  * 排单任务
  */
 export interface ScheduledTask {
@@ -41,8 +53,11 @@ export interface ScheduledTask {
   /** 总工时 */
   totalHours: number
 
-  /** 是否锁定（用户手动调整后锁定，不参与重排） */
+  /** 是否锁定（用户手动调整后锁定，不参与重排）@deprecated 使用 status 字段 */
   isLocked: boolean
+
+  /** 任务状态 */
+  status?: TaskStatus
 
   /** 优先级分数（用于排序） */
   priorityScore?: number
@@ -109,6 +124,46 @@ export interface ScheduleOptions {
     payment: number      // 支付状态权重 (0-1)
     manual: number       // 手动优先级权重 (0-1)
   }
+}
+
+/**
+ * 手动优先级配置
+ * 优先级范围: 1-10，数字越大优先级越高
+ */
+export interface PriorityConfig {
+  /** 截止日期优先级 (1-10, 默认5) */
+  deadlinePriority: number
+
+  /** 接单时间优先级 (1-10, 默认1) */
+  orderTimePriority: number
+
+  /** 费用优先级 (1-10, 默认1) */
+  costPriority: number
+
+  /** WIP（进行中）状态优先级 (1-10, 默认8) */
+  wipPriority: number
+
+  /** Ready（待处理）状态优先级 (1-10, 默认5) */
+  readyPriority: number
+
+  /** 按分类设置的服务优先级 { 'Illustration': 8, 'Animation': 6 } */
+  categoryPriorities: Record<string, number>
+
+  /** 按服务ID设置的服务优先级 { 'service-id-1': 9, 'service-id-2': 3 } */
+  servicePriorities: Record<string, number>
+}
+
+/**
+ * 默认手动优先级配置
+ */
+export const DEFAULT_PRIORITY_CONFIG: PriorityConfig = {
+  deadlinePriority: 5,
+  orderTimePriority: 1,
+  costPriority: 1,
+  wipPriority: 8,
+  readyPriority: 5,
+  categoryPriorities: {},
+  servicePriorities: {}
 }
 
 /**
