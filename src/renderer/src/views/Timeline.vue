@@ -2318,11 +2318,18 @@ const handleCardRightClick = (event: MouseEvent, task: ScheduledTask) => {
       newStatus = TaskStatus.NORMAL
   }
 
-  // 更新任务状态
-  currentTask.status = newStatus
+  // ✨ 同步更新同一 commission 的所有子任务状态
+  const commissionId = currentTask.commissionId
+  let updatedCount = 0
 
-  // 同步更新isLocked字段（保持兼容性）
-  currentTask.isLocked = (newStatus === TaskStatus.LOCKED || newStatus === TaskStatus.COMPLETED)
+  scheduledTasks.value.forEach(t => {
+    if (t.commissionId === commissionId) {
+      t.status = newStatus
+      // 同步更新isLocked字段（保持兼容性）
+      t.isLocked = (newStatus === TaskStatus.LOCKED || newStatus === TaskStatus.COMPLETED)
+      updatedCount++
+    }
+  })
 
   hasUnsavedChanges.value = true
 
@@ -2332,12 +2339,15 @@ const handleCardRightClick = (event: MouseEvent, task: ScheduledTask) => {
     [TaskStatus.LOCKED]: '锁定状态 🔒',
     [TaskStatus.COMPLETED]: '完成状态 ✅'
   }
-  message.success(`已切换为 ${statusNames[newStatus]}`)
+  const taskCountText = updatedCount > 1 ? ` (同步${updatedCount}个子任务)` : ''
+  message.success(`已切换为 ${statusNames[newStatus]}${taskCountText}`)
 
   console.log('[Timeline] 任务状态已切换:', {
+    commissionId: commissionId,
     taskId: task.taskId || task.commissionId,
     oldStatus: currentStatus,
-    newStatus: newStatus
+    newStatus: newStatus,
+    updatedCount: updatedCount
   })
 }
 
@@ -3221,6 +3231,7 @@ const saveScheduledTasks = async () => {
         hoursPerDay: task.hoursPerDay ? { ...task.hoursPerDay } : {},
         totalHours: task.totalHours,
         isLocked: task.isLocked,
+        status: task.status, // ✨ 保存任务状态
         priorityScore: task.priorityScore,
         // 保存子任务相关信息
         parentTaskId: task.parentTaskId,
