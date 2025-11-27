@@ -13,7 +13,8 @@ import type {
 import {
   DEFAULT_SCHEDULE_OPTIONS,
   DEFAULT_SCHEDULER_CONFIG,
-  DEFAULT_PRIORITY_CONFIG
+  DEFAULT_PRIORITY_CONFIG,
+  TaskStatus
 } from '../types/scheduler'
 import { parseDateString, formatDateString, getTodayString } from './dateUtils'
 
@@ -26,7 +27,7 @@ export interface WorkHoursConfig {
 
 // 重新导出类型和常量
 export type { SchedulerConfig, ScheduledTask, ScheduleOptions, CalendarDay, PriorityConfig }
-export { DEFAULT_SCHEDULE_OPTIONS, DEFAULT_SCHEDULER_CONFIG, DEFAULT_PRIORITY_CONFIG }
+export { DEFAULT_SCHEDULE_OPTIONS, DEFAULT_SCHEDULER_CONFIG, DEFAULT_PRIORITY_CONFIG, TaskStatus }
 
 /**
  * 工时计算辅助函数
@@ -346,11 +347,20 @@ export function scheduleCommissions(
   options: ScheduleOptions = DEFAULT_SCHEDULE_OPTIONS,
   workHoursConfig?: WorkHoursConfig | null,
   priorityConfig?: PriorityConfig | null,
-  services?: any[]
+  services?: any[],
+  existingTasks?: ScheduledTask[]
 ): ScheduledTask[] {
-  // Step 1: 过滤出需要排单的订单（READY 和 WIP）
+  // 提取锁定和完成的任务（这些任务不会被重新排单）
+  const lockedTasks = (existingTasks || []).filter(
+    task => task.status === TaskStatus.LOCKED || task.status === TaskStatus.COMPLETED
+  )
+
+  // 获取已被锁定/完成任务占用的 commission IDs
+  const lockedCommissionIds = new Set(lockedTasks.map(task => task.commissionId))
+
+  // Step 1: 过滤出需要排单的订单（READY 和 WIP，且不在锁定任务中）
   const pendingTasks = commissions.filter(
-    c => c.status === 'IN_PROGRESS' || c.status === 'PENDING'
+    c => (c.status === 'IN_PROGRESS' || c.status === 'PENDING') && !lockedCommissionIds.has(c.id)
   )
 
   // Step 2: 计算每个订单的优先级并排序
@@ -371,6 +381,15 @@ export function scheduleCommissions(
   // Step 3: 贪心填充算法 - 使用日历跟踪每天的剩余工时
   const result: ScheduledTask[] = []
   const dailySchedule: Map<string, number> = new Map() // 日期 -> 已使用工时
+
+  // 初始化：将锁定任务的工时计入日程表
+  lockedTasks.forEach(task => {
+    task.workDays.forEach(day => {
+      const hoursUsed = task.hoursPerDay[day] || 0
+      dailySchedule.set(day, (dailySchedule.get(day) || 0) + hoursUsed)
+    })
+  })
+
   let currentDate = options.startFrom || getTodayString()
 
   // 处理每个订单
@@ -487,6 +506,18 @@ export function scheduleCommissions(
 
         // 查找该天已经占用的时间段
         const dayOccupied: Array<{start: number, end: number}> = []
+        // 包括锁定任务
+        lockedTasks.forEach(existingTask => {
+          if (existingTask.workDays.includes(firstDay)) {
+            const existingStartHour = (existingTask as any).startHour ?? 9
+            const existingHours = existingTask.totalHours / existingTask.workDays.length
+            dayOccupied.push({
+              start: existingStartHour,
+              end: existingStartHour + existingHours
+            })
+          }
+        })
+        // 包括已排单的新任务
         result.forEach(existingTask => {
           if (existingTask.workDays.includes(firstDay)) {
             const existingStartHour = (existingTask as any).startHour ?? 9
@@ -543,6 +574,18 @@ export function scheduleCommissions(
 
       // 查找该天已经占用的时间段
       const dayOccupied: Array<{start: number, end: number}> = []
+      // 包括锁定任务
+      lockedTasks.forEach(existingTask => {
+        if (existingTask.workDays.includes(firstDay)) {
+          const existingStartHour = (existingTask as any).startHour ?? 9
+          const existingHours = existingTask.totalHours / existingTask.workDays.length
+          dayOccupied.push({
+            start: existingStartHour,
+            end: existingStartHour + existingHours
+          })
+        }
+      })
+      // 包括已排单的新任务
       result.forEach(existingTask => {
         if (existingTask.workDays.includes(firstDay)) {
           const existingStartHour = (existingTask as any).startHour ?? 9
@@ -584,7 +627,8 @@ export function scheduleCommissions(
     }
   }
 
-  return result
+  // 合并锁定任务和新排单的任务
+  return [...lockedTasks, ...result]
 }
 
 /**

@@ -20,6 +20,18 @@ export interface SchedulerConfig {
 }
 
 /**
+ * 任务状态枚举
+ */
+export enum TaskStatus {
+  /** 普通状态 - 可拖拽、拉伸，排单时可变 */
+  NORMAL = 'NORMAL',
+  /** 锁定状态 - 不可拉伸、不可跨日拖拽，排单时不变 */
+  LOCKED = 'LOCKED',
+  /** 完成状态 - 同锁定状态 */
+  COMPLETED = 'COMPLETED'
+}
+
+/**
  * 排单任务
  */
 export interface ScheduledTask {
@@ -41,8 +53,11 @@ export interface ScheduledTask {
   /** 总工时 */
   totalHours: number
 
-  /** 是否锁定（用户手动调整后锁定，不参与重排） */
+  /** 是否锁定（用户手动调整后锁定，不参与重排）@deprecated 使用 status 字段 */
   isLocked: boolean
+
+  /** 任务状态 */
+  status?: TaskStatus
 
   /** 优先级分数（用于排序） */
   priorityScore?: number
