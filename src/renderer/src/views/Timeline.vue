@@ -2372,12 +2372,6 @@ const handleCardRightClick = (event: MouseEvent, task: ScheduledTask) => {
 
 // 卡片拖动功能（改进版 - 支持垂直移动和智能冲突解决）
 const handleCardDragStart = (event: MouseEvent, task: ScheduledTask) => {
-  // ✨ 检查任务状态：只有锁定状态不允许跨日期拖拽
-  if (task.status === TaskStatus.LOCKED) {
-    message.warning('此任务已锁定，无法拖拽到其他日期')
-    return
-  }
-
   // ✨ 如果正在进行其他操作，不启动拖动
   if (currentOperation.value !== null) {
     console.log('[Timeline] 操作进行中，忽略拖拽:', currentOperation.value)
@@ -2547,6 +2541,19 @@ const performDragMove = (event: MouseEvent) => {
   if (taskIndex === -1) return
 
   const task = scheduledTasks.value[taskIndex] as ExtendedScheduledTask
+
+  // ✨ 检查锁定任务是否尝试跨日期移动
+  if (task.status === TaskStatus.LOCKED) {
+    // 检查日期是否改变
+    const originalDate = originalTaskState.value.startDate
+    if (newStartDate !== originalDate) {
+      // 锁定任务尝试跨日期，标记为无效放置
+      isInvalidPlacement.value = true
+      setTaskMark(task, '_isInvalid')
+      console.log('[Timeline] 锁定任务无法跨日期移动')
+      return
+    }
+  }
 
   // ✨ 重构：统一的碰撞检测逻辑（不区分子任务和普通任务）
   const collisionTarget = findCollisionTarget(task, newStartDate, newStartHour)
@@ -2811,8 +2818,9 @@ const mergeSubTasks = (sourceTask: ScheduledTask, targetTask: ScheduledTask) => 
   const targetStartHour = extTargetTask.startHour ?? 9
   extTargetTask.startHour = Math.min(sourceStartHour, targetStartHour)
 
-  // 清除自定义显示属性，让系统重新计算高度
-  delete extTargetTask.displayTop
+  // ✨ Bug Fix: 立即设置正确的 displayTop，而不是删除它
+  // 删除 displayHeight 让系统重新计算高度
+  extTargetTask.displayTop = (extTargetTask.startHour / 24) * 100
   delete extTargetTask.displayHeight
 
   console.log('[Timeline] 跨日期合并完成:', {
@@ -2842,6 +2850,10 @@ const mergeSubTasks = (sourceTask: ScheduledTask, targetTask: ScheduledTask) => 
     task.subTaskCount = remainingSubTasks.length
   })
 
+  // ✨ Bug Fix: 清除过期的任务索引，确保碰撞检测使用最新数据
+  // 因为源任务已被删除，旧索引包含过期引用
+  clearTasksIndex()
+
   // ✨ 检查合并后是否造成碰撞，并解决连锁碰撞
   const targetDate = targetTask.workDays[0]
   if (targetDate) {
@@ -2852,7 +2864,7 @@ const mergeSubTasks = (sourceTask: ScheduledTask, targetTask: ScheduledTask) => 
     const conflicts = checkTaskConflict(extTargetTask, targetDate, newStartHour, targetTaskId)
 
     if (conflicts.length > 0) {
-      console.log('[Timeline] 合并后检测到碰撞，开始解决:', conflicts.length)
+      console.log('[Timeline] 合并后检测到碰撞，开始解决:', conflicts.length, '个冲突')
 
       // 使用连锁碰撞检测解决冲突，传递原始日期防止跨日期推动
       resolveConflicts(extTargetTask, newStartHour, conflicts, new Set(), 0, targetDate)
