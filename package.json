@@ -19,7 +19,7 @@
     "build": "npm run typecheck && electron-vite build",
     "build:no-check": "electron-vite build",
     "build:win:no-check": "npm run prebuild && npm run build:no-check && electron-builder --win",
-    "postinstall": "electron-builder install-app-deps && playwright install chromium",
+    "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run prebuild && npm run build && electron-builder --dir",
     "build:win": "npm run prebuild && npm run build && electron-builder --win",
     "build:mac": "npm run prebuild && npm run build && electron-builder --mac",

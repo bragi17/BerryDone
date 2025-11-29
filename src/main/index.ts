@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, screen, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -7,6 +7,18 @@ import { fetchVGenCommissions, saveVGenData } from './vgen'
 import { VGenUpdater } from './vgen-updater'
 import type { SchedulerState, SchedulerConfig, ScheduledTask, PriorityConfig } from './types/scheduler'
 import { DEFAULT_PRIORITY_CONFIG } from './types/scheduler'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+
+const execAsync = promisify(exec)
+
+// Widget 窗口管理
+let controlPanelWindow: BrowserWindow | null = null
+let calendarWindow: BrowserWindow | null = null
+let todoWindow: BrowserWindow | null = null
+let appsWindow: BrowserWindow | null = null
+let quickRepliesWindow: BrowserWindow | null = null
+let mainWindowRef: BrowserWindow | null = null
 
 function createWindow(): void {
   // Create the browser window.
@@ -24,6 +36,9 @@ function createWindow(): void {
     }
   })
 
+  // 保存主窗口引用
+  mainWindowRef = mainWindow
+
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
@@ -39,6 +54,273 @@ function createWindow(): void {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+// 创建控制面板窗口
+function createControlPanelWindow(): void {
+  if (controlPanelWindow && !controlPanelWindow.isDestroyed()) {
+    controlPanelWindow.show()
+    controlPanelWindow.focus()
+    return
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { width, height } = primaryDisplay.workAreaSize
+
+  controlPanelWindow = new BrowserWindow({
+    width: 200,
+    height: 150,
+    x: width - 220,
+    y: 20,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  controlPanelWindow.on('ready-to-show', () => {
+    controlPanelWindow?.show()
+  })
+
+  controlPanelWindow.on('closed', () => {
+    controlPanelWindow = null
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    controlPanelWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/widget.html#control`)
+  } else {
+    controlPanelWindow.loadFile(join(__dirname, '../renderer/widget.html'), { hash: 'control' })
+  }
+}
+
+// 创建日历窗口
+function createCalendarWindow(): void {
+  if (calendarWindow && !calendarWindow.isDestroyed()) {
+    calendarWindow.show()
+    calendarWindow.focus()
+    return
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { width, height } = primaryDisplay.workAreaSize
+
+  calendarWindow = new BrowserWindow({
+    width: 320,
+    height: 360,
+    x: 20,
+    y: 20,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    minWidth: 280,
+    minHeight: 320,
+    skipTaskbar: true,
+    alwaysOnTop: false,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  calendarWindow.on('ready-to-show', () => {
+    calendarWindow?.show()
+  })
+
+  calendarWindow.on('closed', () => {
+    calendarWindow = null
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    calendarWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/widget.html#calendar`)
+  } else {
+    calendarWindow.loadFile(join(__dirname, '../renderer/widget.html'), { hash: 'calendar' })
+  }
+}
+
+// 创建待办窗口
+function createTodoWindow(): void {
+  if (todoWindow && !todoWindow.isDestroyed()) {
+    todoWindow.show()
+    todoWindow.focus()
+    return
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { width, height } = primaryDisplay.workAreaSize
+
+  todoWindow = new BrowserWindow({
+    width: 320,
+    height: 420,
+    x: 360,
+    y: 20,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    minWidth: 280,
+    minHeight: 320,
+    skipTaskbar: true,
+    alwaysOnTop: false,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  todoWindow.on('ready-to-show', () => {
+    todoWindow?.show()
+  })
+
+  todoWindow.on('closed', () => {
+    todoWindow = null
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    todoWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/widget.html#todo`)
+  } else {
+    todoWindow.loadFile(join(__dirname, '../renderer/widget.html'), { hash: 'todo' })
+  }
+}
+
+// 创建应用快捷启动窗口
+function createAppsWindow(): void {
+  if (appsWindow && !appsWindow.isDestroyed()) {
+    appsWindow.show()
+    appsWindow.focus()
+    return
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { width, height } = primaryDisplay.workAreaSize
+
+  appsWindow = new BrowserWindow({
+    width: 320,
+    height: 220,
+    x: 20,
+    y: 400,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    minWidth: 280,
+    minHeight: 180,
+    skipTaskbar: true,
+    alwaysOnTop: false,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  appsWindow.on('ready-to-show', () => {
+    appsWindow?.show()
+  })
+
+  appsWindow.on('closed', () => {
+    appsWindow = null
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    appsWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/widget.html#apps`)
+  } else {
+    appsWindow.loadFile(join(__dirname, '../renderer/widget.html'), { hash: 'apps' })
+  }
+}
+
+// 创建快捷回复窗口
+function createQuickRepliesWindow(): void {
+  if (quickRepliesWindow && !quickRepliesWindow.isDestroyed()) {
+    quickRepliesWindow.show()
+    quickRepliesWindow.focus()
+    return
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { width, height } = primaryDisplay.workAreaSize
+
+  quickRepliesWindow = new BrowserWindow({
+    width: 320,
+    height: 140,
+    x: 360,
+    y: 460,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    minWidth: 280,
+    minHeight: 120,
+    skipTaskbar: true,
+    alwaysOnTop: false,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  quickRepliesWindow.on('ready-to-show', () => {
+    quickRepliesWindow?.show()
+  })
+
+  quickRepliesWindow.on('closed', () => {
+    quickRepliesWindow = null
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    quickRepliesWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/widget.html#quick-replies`)
+  } else {
+    quickRepliesWindow.loadFile(join(__dirname, '../renderer/widget.html'), { hash: 'quick-replies' })
+  }
+}
+
+// 打开所有小组件窗口
+function openAllWidgets(): void {
+  // 最小化主窗口
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    mainWindowRef.minimize()
+  }
+
+  // 创建所有小组件窗口
+  createControlPanelWindow()
+  createCalendarWindow()
+  createTodoWindow()
+  createAppsWindow()
+  createQuickRepliesWindow()
+}
+
+// 关闭所有小组件窗口
+function closeAllWidgets(): void {
+  if (controlPanelWindow && !controlPanelWindow.isDestroyed()) {
+    controlPanelWindow.close()
+  }
+  if (calendarWindow && !calendarWindow.isDestroyed()) {
+    calendarWindow.close()
+  }
+  if (todoWindow && !todoWindow.isDestroyed()) {
+    todoWindow.close()
+  }
+  if (appsWindow && !appsWindow.isDestroyed()) {
+    appsWindow.close()
+  }
+  if (quickRepliesWindow && !quickRepliesWindow.isDestroyed()) {
+    quickRepliesWindow.close()
+  }
+}
+
+// 返回主窗口
+function returnToMainWindow(): void {
+  closeAllWidgets()
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    mainWindowRef.restore()
+    mainWindowRef.show()
+    mainWindowRef.focus()
   }
 }
 
@@ -406,6 +688,126 @@ function registerVGenHandlers(): void {
   })
 }
 
+// 注册 Widget IPC 处理器
+function registerWidgetHandlers(): void {
+  // 打开小组件
+  ipcMain.handle('widget:toggle', () => {
+    openAllWidgets()
+  })
+
+  // 返回主窗口
+  ipcMain.handle('widget:returnToMain', () => {
+    returnToMainWindow()
+  })
+
+  // 关闭应用程序
+  ipcMain.handle('widget:closeApp', () => {
+    app.quit()
+  })
+
+  // 最小化所有小组件
+  ipcMain.handle('widget:minimizeAll', () => {
+    if (controlPanelWindow && !controlPanelWindow.isDestroyed()) {
+      controlPanelWindow.minimize()
+    }
+    if (calendarWindow && !calendarWindow.isDestroyed()) {
+      calendarWindow.minimize()
+    }
+    if (todoWindow && !todoWindow.isDestroyed()) {
+      todoWindow.minimize()
+    }
+    if (appsWindow && !appsWindow.isDestroyed()) {
+      appsWindow.minimize()
+    }
+    if (quickRepliesWindow && !quickRepliesWindow.isDestroyed()) {
+      quickRepliesWindow.minimize()
+    }
+  })
+
+  // 单独关闭窗口
+  ipcMain.handle('widget:close', (_event, type: string) => {
+    switch (type) {
+      case 'control':
+        if (controlPanelWindow && !controlPanelWindow.isDestroyed()) {
+          controlPanelWindow.close()
+        }
+        break
+      case 'calendar':
+        if (calendarWindow && !calendarWindow.isDestroyed()) {
+          calendarWindow.close()
+        }
+        break
+      case 'todo':
+        if (todoWindow && !todoWindow.isDestroyed()) {
+          todoWindow.close()
+        }
+        break
+      case 'apps':
+        if (appsWindow && !appsWindow.isDestroyed()) {
+          appsWindow.close()
+        }
+        break
+      case 'quick-replies':
+        if (quickRepliesWindow && !quickRepliesWindow.isDestroyed()) {
+          quickRepliesWindow.close()
+        }
+        break
+    }
+  })
+
+  ipcMain.handle('widget:minimize', () => {
+    // 已被 widget:minimizeAll 取代
+  })
+
+  // 选择应用程序
+  ipcMain.handle('widget:selectApp', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [
+        {
+          name: 'Applications',
+          extensions: process.platform === 'win32' ? ['exe', 'lnk'] : ['app']
+        },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+
+    const filePath = result.filePaths[0]
+    const fileName = filePath.split(/[\\/]/).pop() || 'Unknown'
+    const appName = fileName.replace(/\.(exe|lnk|app)$/i, '')
+
+    return {
+      name: appName,
+      path: filePath,
+      icon: null // 可以后续添加图标提取功能
+    }
+  })
+
+  // 启动应用程序
+  ipcMain.handle('widget:launchApp', async (_event, appPath: string) => {
+    try {
+      if (process.platform === 'win32') {
+        // Windows: 使用 start 命令
+        await execAsync(`start "" "${appPath}"`, { shell: true })
+      } else if (process.platform === 'darwin') {
+        // macOS: 使用 open 命令
+        await execAsync(`open "${appPath}"`)
+      } else {
+        // Linux: 使用 xdg-open
+        await execAsync(`xdg-open "${appPath}"`)
+      }
+      return { success: true }
+    } catch (error) {
+      console.error('Failed to launch app:', error)
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+}
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -422,12 +824,15 @@ app.whenReady().then(async () => {
 
   // 初始化数据库
   await initDB()
-  
+
   // 注册数据库处理器
   registerDBHandlers()
-  
+
   // 注册 VGen 处理器
   registerVGenHandlers()
+
+  // 注册 Widget 处理器
+  registerWidgetHandlers()
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
