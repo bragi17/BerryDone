@@ -2406,7 +2406,34 @@ const handleCardDragStart = (event: MouseEvent, task: ScheduledTask) => {
 // 添加无效放置标记的响应式状态
 const isInvalidPlacement = ref(false)
 
+// ✨ 性能优化：缓存 DOM 查询结果
+let cachedSchedulerContent: Element | null = null
+let cachedSchedulerContainer: Element | null = null
+let dragAnimationFrame: number | null = null
+let markedTasks: Set<any> | null = null // 追踪有标记的任务
+
+// ✨ 性能优化：辅助函数 - 设置标记并加入追踪
+const setTaskMark = (task: any, mark: string) => {
+  if (!markedTasks) markedTasks = new Set()
+  ;(task as any)[mark] = true
+  markedTasks.add(task)
+}
+
 const handleCardDragMove = (event: MouseEvent) => {
+  if (!isDraggingCard.value || !interactingTask.value || !originalTaskState.value) return
+
+  // ✨ 性能优化：使用 requestAnimationFrame 节流
+  if (dragAnimationFrame !== null) {
+    return // 跳过本次调用，等待下一帧
+  }
+
+  dragAnimationFrame = requestAnimationFrame(() => {
+    dragAnimationFrame = null
+    performDragMove(event)
+  })
+}
+
+const performDragMove = (event: MouseEvent) => {
   if (!isDraggingCard.value || !interactingTask.value || !originalTaskState.value) return
 
   // 计算鼠标移动的距离（像素）
@@ -2425,9 +2452,12 @@ const handleCardDragMove = (event: MouseEvent) => {
   // 计算每天的宽度（像素）
   let dayWidth: number
   if (schedulerViewMode.value === 'week') {
-    const schedulerContent = document.querySelector('.scheduler-calendar-content')
-    if (!schedulerContent) return
-    dayWidth = schedulerContent.clientWidth / 7
+    // ✨ 性能优化：缓存 DOM 查询
+    if (!cachedSchedulerContent) {
+      cachedSchedulerContent = document.querySelector('.scheduler-calendar-content')
+    }
+    if (!cachedSchedulerContent) return
+    dayWidth = cachedSchedulerContent.clientWidth / 7
   } else {
     dayWidth = schedulerDayWidth.value
   }
@@ -2436,10 +2466,13 @@ const handleCardDragMove = (event: MouseEvent) => {
   const daysOffset = Math.round(deltaX / dayWidth)
 
   // 计算垂直位置（小时） - 以0.5小时为单位
-  const schedulerContainer = document.querySelector('.scheduler-tasks-container')
-  if (!schedulerContainer) return
+  // ✨ 性能优化：缓存 DOM 查询
+  if (!cachedSchedulerContainer) {
+    cachedSchedulerContainer = document.querySelector('.scheduler-tasks-container')
+  }
+  if (!cachedSchedulerContainer) return
 
-  const containerHeight = schedulerContainer.clientHeight
+  const containerHeight = cachedSchedulerContainer.clientHeight
   const pixelsPerHour = containerHeight / 24
   const hoursOffsetRaw = deltaY / pixelsPerHour
   const hoursOffset = Math.round(hoursOffsetRaw * 2) / 2 // 四舍五入到最近的0.5
@@ -2494,13 +2527,13 @@ const handleCardDragMove = (event: MouseEvent) => {
       // 根据碰撞持续时间显示不同的视觉效果
       if (collisionDuration.value >= COLLISION_MERGE_THRESHOLD) {
         // 碰撞超过0.5秒，显示准备合并效果
-        ;(collisionTarget as any)._isMergeReady = true
-        ;(task as any)._isMergeReady = true
+        setTaskMark(collisionTarget, '_isMergeReady')
+        setTaskMark(task, '_isMergeReady')
         delete (collisionTarget as any)._isMergeTarget
         console.log('[Timeline] 碰撞持续', collisionDuration.value, 'ms，准备合并')
       } else {
         // 碰撞未达到阈值，显示碰撞预览
-        ;(collisionTarget as any)._isMergeTarget = true
+        setTaskMark(collisionTarget, '_isMergeTarget')
         delete (collisionTarget as any)._isMergeReady
       }
 
@@ -2515,13 +2548,18 @@ const handleCardDragMove = (event: MouseEvent) => {
     }
   }
 
-  // 清除所有标记（无论是否有碰撞）
-  scheduledTasks.value.forEach(t => {
-    delete (t as any)._isWarning
-    delete (t as any)._isMergeTarget
-    delete (t as any)._isMergeReady
-    delete (t as any)._isInvalid
+  // ✨ 性能优化：只清除之前标记过的任务，而不是遍历所有任务
+  // 使用 Set 追踪有标记的任务
+  if (!markedTasks) {
+    markedTasks = new Set()
+  }
+  markedTasks.forEach((t: any) => {
+    delete t._isWarning
+    delete t._isMergeTarget
+    delete t._isMergeReady
+    delete t._isInvalid
   })
+  markedTasks.clear()
 
   // 如果刚才可以合并且正在等待合并，不继续执行移动逻辑
   if (collidingTarget.value && collisionDuration.value < COLLISION_MERGE_THRESHOLD) {
@@ -2529,8 +2567,8 @@ const handleCardDragMove = (event: MouseEvent) => {
   }
   if (collidingTarget.value && collisionDuration.value >= COLLISION_MERGE_THRESHOLD) {
     // 准备合并，恢复标记
-    ;(collidingTarget.value as any)._isMergeReady = true
-    ;(task as any)._isMergeReady = true
+    setTaskMark(collidingTarget.value, '_isMergeReady')
+    setTaskMark(task, '_isMergeReady')
     return
   }
 
@@ -2557,16 +2595,16 @@ const handleCardDragMove = (event: MouseEvent) => {
     isInvalidPlacement.value = true
 
     // 给拖动的卡片添加警告效果
-    ;(task as any)._isInvalid = true
+    setTaskMark(task, '_isInvalid')
 
     // ✨ 给所有会被推出边界的卡片添加警告效果
     for (const affectedTask of overflowResult.affectedTasks) {
-      ;(affectedTask as any)._isWarning = true
+      setTaskMark(affectedTask, '_isWarning')
     }
 
     // 给直接冲突的卡片也添加警告效果
     for (const conflictTask of conflicts) {
-      ;(conflictTask as any)._isWarning = true
+      setTaskMark(conflictTask, '_isWarning')
     }
 
     // 不更新位置，保持原位
@@ -2599,7 +2637,7 @@ const handleCardDragMove = (event: MouseEvent) => {
   if (taskEndHour > 24) {
     // 会超出边界，标记为无效放置
     isInvalidPlacement.value = true
-    ;(task as any)._isInvalid = true
+    setTaskMark(task, '_isInvalid')
     console.log('[Timeline] 无效放置：任务会超出24小时边界', {
       startHour: newStartHour,
       endHour: taskEndHour,
@@ -2621,7 +2659,7 @@ const handleCardDragMove = (event: MouseEvent) => {
     if (!conflictsResolved) {
       // ✅ Bug Fix 3: 冲突解决失败，存在无法推动的任务，标记为无效放置
       isInvalidPlacement.value = true
-      ;(task as any)._isInvalid = true
+      setTaskMark(task, '_isInvalid')
       console.log('[Timeline] 无效放置：冲突解决失败，存在无法推动的任务')
       // 不更新位置，保持原位
       return
@@ -2819,14 +2857,21 @@ const handleCardDragEnd = () => {
       console.log('[Timeline] 卡片拖动结束，新日期:', interactingTask.value.startDate)
     }
 
-    // 清除所有标记
+    // ✨ 性能优化：清除标记（使用缓存的markedTasks）
     isInvalidPlacement.value = false
-    scheduledTasks.value.forEach(t => {
-      delete (t as any)._isInvalid
-      delete (t as any)._isWarning
-      delete (t as any)._isMergeTarget
-      delete (t as any)._isMergeReady
-    })
+    if (markedTasks) {
+      markedTasks.forEach(t => {
+        delete (t as any)._isInvalid
+        delete (t as any)._isWarning
+        delete (t as any)._isMergeTarget
+        delete (t as any)._isMergeReady
+      })
+      markedTasks.clear()
+    }
+
+    // ✨ 性能优化：清除DOM缓存
+    cachedSchedulerContent = null
+    cachedSchedulerContainer = null
 
     // 重置碰撞计时状态
     collisionStartTime.value = null
