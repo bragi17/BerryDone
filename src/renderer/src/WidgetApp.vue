@@ -39,7 +39,15 @@ onMounted(() => {
 </style>
 
 <style>
-/* 全局样式 - app-region 需要非 scoped 才能正确工作 */
+/* 全局样式 - 确保 html 和 body 透明 */
+html, body {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  overflow: hidden;
+}
+
+/* app-region 需要非 scoped 才能正确工作 */
 .drag-handle {
   -webkit-app-region: drag !important;
   app-region: drag !important;

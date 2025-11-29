@@ -20,6 +20,339 @@ let appsWindow: BrowserWindow | null = null
 let quickRepliesWindow: BrowserWindow | null = null
 let mainWindowRef: BrowserWindow | null = null
 
+// 磁性吸附管理
+const SNAP_THRESHOLD = 20 // 吸附阈值（像素）
+const BREAK_THRESHOLD = 15 // 断开吸附阈值（像素）
+interface SnappedWidget {
+  type: string
+  offsetX: number // 相对于父组件的 X 偏移
+  offsetY: number // 相对于父组件的 Y 偏移
+}
+
+// 记录每个小组件下方吸附的子组件
+const snappedWidgets: Map<string, SnappedWidget[]> = new Map()
+
+// 获取小组件窗口
+function getWidgetWindow(type: string): BrowserWindow | null {
+  switch (type) {
+    case 'calendar':
+      return calendarWindow
+    case 'todo':
+      return todoWindow
+    case 'apps':
+      return appsWindow
+    case 'quick-replies':
+      return quickRepliesWindow
+    default:
+      return null
+  }
+}
+
+// 获取小组件尺寸
+function getWidgetSize(type: string): { width: number; height: number } {
+  const window = getWidgetWindow(type)
+  if (window && !window.isDestroyed()) {
+    return window.getBounds()
+  }
+  // 默认尺寸（根据不同类型返回合适的默认值）
+  switch (type) {
+    case 'calendar':
+      return { width: 340, height: 410 }
+    case 'todo':
+      return { width: 320, height: 90 }
+    case 'apps':
+      return { width: 100, height: 110 }
+    case 'quick-replies':
+      return { width: 320, height: 70 }
+    default:
+      return { width: 320, height: 360 }
+  }
+}
+
+// 检测两个小组件是否应该吸附
+function shouldSnap(
+  pos1: { x: number; y: number; width: number; height: number },
+  pos2: { x: number; y: number; width: number; height: number }
+): { snap: boolean; offsetX: number; offsetY: number; direction: 'bottom' | 'right' | 'left' } | null {
+  // 1. 检测垂直吸附（pos2 在 pos1 下方）
+  const horizontalOverlap =
+    Math.max(pos1.x, pos2.x) < Math.min(pos1.x + pos1.width, pos2.x + pos2.width) + SNAP_THRESHOLD
+
+  if (horizontalOverlap) {
+    const bottomGap = pos2.y - (pos1.y + pos1.height)
+    if (bottomGap >= 0 && bottomGap < SNAP_THRESHOLD) {
+      return {
+        snap: true,
+        offsetX: pos2.x - pos1.x,
+        offsetY: pos2.y - pos1.y,
+        direction: 'bottom'
+      }
+    }
+  }
+
+  // 2. 检测水平吸附（pos2 在 pos1 右侧或左侧）
+  const verticalOverlap =
+    Math.max(pos1.y, pos2.y) < Math.min(pos1.y + pos1.height, pos2.y + pos2.height) + SNAP_THRESHOLD
+
+  if (verticalOverlap) {
+    // 检测 pos2 是否在 pos1 右侧
+    const rightGap = pos2.x - (pos1.x + pos1.width)
+    if (rightGap >= 0 && rightGap < SNAP_THRESHOLD) {
+      return {
+        snap: true,
+        offsetX: pos2.x - pos1.x,
+        offsetY: pos2.y - pos1.y,
+        direction: 'right'
+      }
+    }
+
+    // 检测 pos2 是否在 pos1 左侧
+    const leftGap = pos1.x - (pos2.x + pos2.width)
+    if (leftGap >= 0 && leftGap < SNAP_THRESHOLD) {
+      return {
+        snap: true,
+        offsetX: pos2.x - pos1.x,
+        offsetY: pos2.y - pos1.y,
+        direction: 'left'
+      }
+    }
+  }
+
+  return null
+}
+
+// 检测并建立吸附关系
+function checkAndSnap(movedType: string) {
+  const movedWindow = getWidgetWindow(movedType)
+  if (!movedWindow || movedWindow.isDestroyed()) return
+
+  const movedBounds = movedWindow.getBounds()
+  const movedPos = {
+    x: movedBounds.x,
+    y: movedBounds.y,
+    width: movedBounds.width,
+    height: movedBounds.height
+  }
+
+  const widgetTypes = ['calendar', 'todo', 'apps', 'quick-replies'].filter((t) => t !== movedType)
+
+  // 清除该组件之前作为子组件的吸附关系
+  for (const [parentType, children] of snappedWidgets.entries()) {
+    const filtered = children.filter((child) => child.type !== movedType)
+    if (filtered.length !== children.length) {
+      snappedWidgets.set(parentType, filtered)
+    }
+  }
+
+  // 收集所有可能的吸附目标
+  interface SnapTarget {
+    otherType: string
+    otherBounds: { x: number; y: number; width: number; height: number }
+    snapResult: { snap: boolean; offsetX: number; offsetY: number; direction: 'bottom' | 'right' | 'left' }
+    distance: number
+    snapX: number
+    snapY: number
+  }
+
+  const snapTargets: SnapTarget[] = []
+
+  for (const otherType of widgetTypes) {
+    const otherWindow = getWidgetWindow(otherType)
+    if (!otherWindow || otherWindow.isDestroyed() || !otherWindow.isVisible()) continue
+
+    const otherBounds = otherWindow.getBounds()
+    const otherPos = {
+      x: otherBounds.x,
+      y: otherBounds.y,
+      width: otherBounds.width,
+      height: otherBounds.height
+    }
+
+    const snapResult = shouldSnap(otherPos, movedPos)
+    if (snapResult && snapResult.snap) {
+      // 计算吸附后的位置
+      let snapX = otherBounds.x
+      let snapY = otherBounds.y
+
+      if (snapResult.direction === 'bottom') {
+        snapX = otherBounds.x + snapResult.offsetX
+        snapY = otherBounds.y + otherBounds.height
+      } else if (snapResult.direction === 'right') {
+        snapX = otherBounds.x + otherBounds.width
+        snapY = otherBounds.y + snapResult.offsetY
+      } else if (snapResult.direction === 'left') {
+        snapX = otherBounds.x - movedBounds.width
+        snapY = otherBounds.y + snapResult.offsetY
+      }
+
+      // 计算当前位置与吸附目标的距离
+      const dx = movedBounds.x - snapX
+      const dy = movedBounds.y - snapY
+      const distance = Math.sqrt(dx * dx + dy * dy)
+
+      snapTargets.push({
+        otherType,
+        otherBounds,
+        snapResult,
+        distance,
+        snapX,
+        snapY
+      })
+    }
+  }
+
+  // 如果有多个吸附目标，选择距离最近的一个
+  if (snapTargets.length > 0) {
+    // 按距离排序
+    snapTargets.sort((a, b) => a.distance - b.distance)
+
+    // 选择最近的目标
+    const closestTarget = snapTargets[0]
+
+    // 建立吸附关系
+    if (!snappedWidgets.has(closestTarget.otherType)) {
+      snappedWidgets.set(closestTarget.otherType, [])
+    }
+    const children = snappedWidgets.get(closestTarget.otherType)!
+    children.push({
+      type: movedType,
+      offsetX: closestTarget.snapResult.offsetX,
+      offsetY: closestTarget.snapResult.offsetY
+    })
+
+    // 调整位置使其精确吸附
+    movedWindow.setPosition(closestTarget.snapX, closestTarget.snapY)
+  }
+}
+
+// 移动小组件及其吸附的子组件
+function moveWidgetWithChildren(type: string, deltaX: number, deltaY: number) {
+  const children = snappedWidgets.get(type)
+  if (!children || children.length === 0) return
+
+  for (const child of children) {
+    const childWindow = getWidgetWindow(child.type)
+    if (!childWindow || childWindow.isDestroyed()) continue
+
+    const childBounds = childWindow.getBounds()
+    childWindow.setPosition(childBounds.x + deltaX, childBounds.y + deltaY)
+
+    // 递归移动子组件的子组件
+    moveWidgetWithChildren(child.type, deltaX, deltaY)
+  }
+}
+
+// 构建磁吸组 - 找到与某个组件相连的所有组件（深度优先搜索）
+function getSnapGroup(type: string): Set<string> {
+  const group = new Set<string>()
+  const toVisit = [type]
+
+  while (toVisit.length > 0) {
+    const current = toVisit.pop()!
+    if (group.has(current)) continue
+
+    group.add(current)
+
+    // 找到当前组件的所有子组件
+    const children = snappedWidgets.get(current) || []
+    for (const child of children) {
+      if (!group.has(child.type)) {
+        toVisit.push(child.type)
+      }
+    }
+
+    // 找到当前组件作为子组件的父组件
+    for (const [parentType, childrenList] of snappedWidgets.entries()) {
+      if (childrenList.some(c => c.type === current) && !group.has(parentType)) {
+        toVisit.push(parentType)
+      }
+    }
+  }
+
+  return group
+}
+
+// 找到磁吸组中最高的组件（y值最小的）
+function getTopWidgetsInGroup(group: Set<string>): string[] {
+  let minY = Infinity
+  const topWidgets: string[] = []
+
+  // 先找到最小的 y 值
+  for (const widgetType of group) {
+    const window = getWidgetWindow(widgetType)
+    if (!window || window.isDestroyed()) continue
+
+    const bounds = window.getBounds()
+    if (bounds.y < minY) {
+      minY = bounds.y
+    }
+  }
+
+  // 找到所有 y 值等于最小 y 值的组件
+  for (const widgetType of group) {
+    const window = getWidgetWindow(widgetType)
+    if (!window || window.isDestroyed()) continue
+
+    const bounds = window.getBounds()
+    if (bounds.y === minY) {
+      topWidgets.push(widgetType)
+    }
+  }
+
+  return topWidgets
+}
+
+// 移动整个磁吸组
+function moveSnapGroup(movedType: string, deltaX: number, deltaY: number) {
+  const group = getSnapGroup(movedType)
+
+  for (const widgetType of group) {
+    // 跳过触发移动的组件，它已经在外面被移动了
+    if (widgetType === movedType) continue
+
+    const window = getWidgetWindow(widgetType)
+    if (!window || window.isDestroyed()) continue
+
+    const bounds = window.getBounds()
+    window.setPosition(bounds.x + deltaX, bounds.y + deltaY)
+  }
+}
+
+// 断开组件的所有吸附关系
+function breakSnapRelations(type: string) {
+  // 移除该组件作为父组件的所有子组件关系
+  snappedWidgets.delete(type)
+
+  // 移除该组件作为子组件的父子关系
+  for (const [parentType, children] of snappedWidgets.entries()) {
+    const filtered = children.filter((child) => child.type !== type)
+    if (filtered.length !== children.length) {
+      snappedWidgets.set(parentType, filtered)
+    }
+    // 如果父组件没有子组件了，删除这个键
+    if (filtered.length === 0) {
+      snappedWidgets.delete(parentType)
+    }
+  }
+}
+
+// 获取所有小组件的显示状态
+function getWidgetStates() {
+  return {
+    calendar: calendarWindow !== null && !calendarWindow.isDestroyed() && calendarWindow.isVisible(),
+    todo: todoWindow !== null && !todoWindow.isDestroyed() && todoWindow.isVisible(),
+    apps: appsWindow !== null && !appsWindow.isDestroyed() && appsWindow.isVisible(),
+    'quick-replies': quickRepliesWindow !== null && !quickRepliesWindow.isDestroyed() && quickRepliesWindow.isVisible()
+  }
+}
+
+// 广播状态变化到控制面板
+function broadcastStateChange() {
+  if (controlPanelWindow && !controlPanelWindow.isDestroyed()) {
+    controlPanelWindow.webContents.send('widget:stateChanged', getWidgetStates())
+  }
+}
+
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
@@ -41,6 +374,12 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+  })
+
+  mainWindow.on('closed', () => {
+    // 主窗口关闭时，关闭所有小组件
+    closeAllWidgets()
+    mainWindowRef = null
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -69,9 +408,9 @@ function createControlPanelWindow(): void {
   const { width, height } = primaryDisplay.workAreaSize
 
   controlPanelWindow = new BrowserWindow({
-    width: 200,
-    height: 150,
-    x: width - 220,
+    width: 270,
+    height: 470,
+    x: width - 290,
     y: 20,
     frame: false,
     transparent: true,
@@ -87,6 +426,10 @@ function createControlPanelWindow(): void {
 
   controlPanelWindow.on('ready-to-show', () => {
     controlPanelWindow?.show()
+    // 延迟一下确保窗口完全加载后再广播状态
+    setTimeout(() => {
+      broadcastStateChange()
+    }, 100)
   })
 
   controlPanelWindow.on('closed', () => {
@@ -112,13 +455,15 @@ function createCalendarWindow(): void {
   const { width, height } = primaryDisplay.workAreaSize
 
   calendarWindow = new BrowserWindow({
-    width: 320,
-    height: 360,
+    width: 340,
+    height: 410,
+    minWidth: 150,
+    minHeight: 100,
     x: 20,
     y: 20,
     frame: false,
     transparent: true,
-    resizable: false,
+    resizable: true,
     skipTaskbar: true,
     alwaysOnTop: true,
     show: false,
@@ -134,6 +479,7 @@ function createCalendarWindow(): void {
 
   calendarWindow.on('closed', () => {
     calendarWindow = null
+    broadcastStateChange()
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -156,12 +502,14 @@ function createTodoWindow(): void {
 
   todoWindow = new BrowserWindow({
     width: 320,
-    height: 420,
+    height: 90,
+    minWidth: 150,
+    minHeight: 100,
     x: 360,
     y: 20,
     frame: false,
     transparent: true,
-    resizable: false,
+    resizable: true,
     skipTaskbar: true,
     alwaysOnTop: true,
     show: false,
@@ -177,6 +525,7 @@ function createTodoWindow(): void {
 
   todoWindow.on('closed', () => {
     todoWindow = null
+    broadcastStateChange()
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -198,13 +547,15 @@ function createAppsWindow(): void {
   const { width, height } = primaryDisplay.workAreaSize
 
   appsWindow = new BrowserWindow({
-    width: 320,
-    height: 220,
+    width: 100,
+    height: 110,
+    minWidth: 150,
+    minHeight: 100,
     x: 20,
     y: 400,
     frame: false,
     transparent: true,
-    resizable: false,
+    resizable: true,
     skipTaskbar: true,
     alwaysOnTop: true,
     show: false,
@@ -220,6 +571,7 @@ function createAppsWindow(): void {
 
   appsWindow.on('closed', () => {
     appsWindow = null
+    broadcastStateChange()
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -242,12 +594,14 @@ function createQuickRepliesWindow(): void {
 
   quickRepliesWindow = new BrowserWindow({
     width: 320,
-    height: 140,
+    height: 70,
+    minWidth: 150,
+    minHeight: 100,
     x: 360,
     y: 460,
     frame: false,
     transparent: true,
-    resizable: false,
+    resizable: true,
     skipTaskbar: true,
     alwaysOnTop: true,
     show: false,
@@ -263,6 +617,7 @@ function createQuickRepliesWindow(): void {
 
   quickRepliesWindow.on('closed', () => {
     quickRepliesWindow = null
+    broadcastStateChange()
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -747,6 +1102,54 @@ function registerWidgetHandlers(): void {
     }
   })
 
+  // 切换小组件显示/隐藏
+  ipcMain.handle('widget:toggleWidget', (_event, type: string) => {
+    let window: BrowserWindow | null = null
+    let createFunc: (() => void) | null = null
+
+    switch (type) {
+      case 'calendar':
+        window = calendarWindow
+        createFunc = createCalendarWindow
+        break
+      case 'todo':
+        window = todoWindow
+        createFunc = createTodoWindow
+        break
+      case 'apps':
+        window = appsWindow
+        createFunc = createAppsWindow
+        break
+      case 'quick-replies':
+        window = quickRepliesWindow
+        createFunc = createQuickRepliesWindow
+        break
+    }
+
+    if (window && !window.isDestroyed()) {
+      // 窗口存在，切换显示/隐藏
+      if (window.isVisible()) {
+        window.hide()
+      } else {
+        window.show()
+      }
+    } else if (createFunc) {
+      // 窗口不存在，创建
+      createFunc()
+    }
+
+    // 广播状态变化
+    setTimeout(() => broadcastStateChange(), 100)
+
+    // 返回新状态
+    return window && !window.isDestroyed() && window.isVisible()
+  })
+
+  // 获取所有小组件状态
+  ipcMain.handle('widget:getStates', () => {
+    return getWidgetStates()
+  })
+
   ipcMain.handle('widget:minimize', () => {
     // 已被 widget:minimizeAll 取代
   })
@@ -777,8 +1180,8 @@ function registerWidgetHandlers(): void {
     return [0, 0]
   })
 
-  // 设置窗口位置
-  ipcMain.handle('widget:setPosition', (_event, type: string, x: number, y: number) => {
+  // 获取窗口大小
+  ipcMain.handle('widget:getSize', (_event, type: string) => {
     let window: BrowserWindow | null = null
     switch (type) {
       case 'control':
@@ -798,7 +1201,139 @@ function registerWidgetHandlers(): void {
         break
     }
     if (window && !window.isDestroyed()) {
-      window.setPosition(Math.round(x), Math.round(y))
+      const size = window.getSize()
+      return { width: size[0], height: size[1] }
+    }
+    return { width: 0, height: 0 }
+  })
+
+  // 设置窗口大小
+  ipcMain.handle('widget:setSize', (_event, type: string, width: number, height: number) => {
+    let window: BrowserWindow | null = null
+    switch (type) {
+      case 'control':
+        window = controlPanelWindow
+        break
+      case 'calendar':
+        window = calendarWindow
+        break
+      case 'todo':
+        window = todoWindow
+        break
+      case 'apps':
+        window = appsWindow
+        break
+      case 'quick-replies':
+        window = quickRepliesWindow
+        break
+    }
+    if (window && !window.isDestroyed()) {
+      window.setSize(Math.round(width), Math.round(height))
+    }
+  })
+
+  // 设置窗口位置和大小（用于调整左/上边缘时）
+  ipcMain.handle('widget:setBounds', (_event, type: string, x: number, y: number, width: number, height: number) => {
+    let window: BrowserWindow | null = null
+    switch (type) {
+      case 'control':
+        window = controlPanelWindow
+        break
+      case 'calendar':
+        window = calendarWindow
+        break
+      case 'todo':
+        window = todoWindow
+        break
+      case 'apps':
+        window = appsWindow
+        break
+      case 'quick-replies':
+        window = quickRepliesWindow
+        break
+    }
+    if (window && !window.isDestroyed()) {
+      window.setBounds({
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(width),
+        height: Math.round(height)
+      })
+    }
+  })
+
+  // 设置窗口位置
+  ipcMain.handle('widget:setPosition', (_event, type: string, x: number, y: number) => {
+    // 控制面板不参与吸附
+    if (type === 'control') {
+      if (controlPanelWindow && !controlPanelWindow.isDestroyed()) {
+        controlPanelWindow.setPosition(Math.round(x), Math.round(y))
+      }
+      return
+    }
+
+    let window: BrowserWindow | null = null
+    switch (type) {
+      case 'calendar':
+        window = calendarWindow
+        break
+      case 'todo':
+        window = todoWindow
+        break
+      case 'apps':
+        window = appsWindow
+        break
+      case 'quick-replies':
+        window = quickRepliesWindow
+        break
+    }
+
+    if (window && !window.isDestroyed()) {
+      // 记录旧位置，用于计算移动距离
+      const oldBounds = window.getBounds()
+      const oldX = oldBounds.x
+      const oldY = oldBounds.y
+
+      // 计算移动距离
+      const deltaX = Math.round(x) - oldX
+      const deltaY = Math.round(y) - oldY
+      const moveDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
+
+      // 检查是否在磁吸组中
+      const snapGroup = getSnapGroup(type)
+
+      if (snapGroup.size > 1) {
+        // 在磁吸组中，检查是否是最高的组件之一
+        const topWidgets = getTopWidgetsInGroup(snapGroup)
+        const isTopWidget = topWidgets.includes(type)
+
+        if (isTopWidget) {
+          // 是最高组件之一，允许拖动整个磁吸组
+          window.setPosition(Math.round(x), Math.round(y))
+
+          // 移动整个磁吸组
+          if (deltaX !== 0 || deltaY !== 0) {
+            moveSnapGroup(type, deltaX, deltaY)
+          }
+        } else {
+          // 不是最高组件，检查移动距离
+          if (moveDistance > BREAK_THRESHOLD) {
+            // 移动距离超过阈值，断开吸附关系
+            breakSnapRelations(type)
+            // 然后正常移动
+            window.setPosition(Math.round(x), Math.round(y))
+          } else {
+            // 移动距离不足，不允许移动
+            return
+          }
+        }
+      } else {
+        // 不在磁吸组中，单独移动
+        window.setPosition(Math.round(x), Math.round(y))
+      }
+
+      // 检测是否应该吸附到其他小组件
+      setTimeout(() => checkAndSnap(type), 50)
     }
   })
 

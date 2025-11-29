@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { NButton, NIcon, NInput, NEmpty, useMessage } from 'naive-ui'
+import { NButton, NIcon, NInput, useMessage } from 'naive-ui'
 import { AddCircleOutline, CloseCircleOutline, CopyOutline } from '@vicons/ionicons5'
 
 interface QuickReply {
@@ -80,15 +80,6 @@ onMounted(() => {
 
 <template>
   <div class="quick-replies-widget">
-    <div class="replies-header">
-      <n-button v-if="!isAdding" size="small" @click="isAdding = true" secondary>
-        <template #icon>
-          <n-icon :component="AddCircleOutline" />
-        </template>
-        添加
-      </n-button>
-    </div>
-
     <!-- 添加回复表单 -->
     <div v-if="isAdding" class="add-form">
       <n-input
@@ -105,14 +96,14 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 回复列表 -->
-    <n-empty v-if="!isAdding && replies.length === 0" description="暂无快捷回复" size="small">
-      <template #icon>
-        <span style="font-size: 24px">💬</span>
-      </template>
-    </n-empty>
+    <!-- 添加按钮（作为列表项） -->
+    <div v-if="!isAdding" class="add-item" @click="isAdding = true">
+      <n-icon :component="AddCircleOutline" :size="20" class="add-icon" />
+      <span>添加快捷回复</span>
+    </div>
 
-    <div v-else-if="!isAdding" class="replies-list">
+    <!-- 回复列表 -->
+    <div v-if="!isAdding" class="replies-list">
       <div v-for="reply in replies" :key="reply.id" class="reply-item">
         <div class="reply-text" @click="copyToClipboard(reply.text)">
           <n-icon :component="CopyOutline" class="copy-icon" />
@@ -131,12 +122,31 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
-.replies-header {
+.add-item {
+  padding: 10px 12px;
+  background: rgba(139, 92, 246, 0.15);
+  border: 2px dashed rgba(139, 92, 246, 0.5);
+  border-radius: 6px;
+  font-size: 13px;
+  color: #8b5cf6;
+  cursor: pointer;
+  transition: all 0.2s;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+
+.add-item:hover {
+  background: rgba(139, 92, 246, 0.25);
+  border-color: #8b5cf6;
+}
+
+.add-icon {
+  flex-shrink: 0;
 }
 
 .add-form {

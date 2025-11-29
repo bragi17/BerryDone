@@ -19,6 +19,14 @@ const dragStartY = ref(0)
 const windowStartX = ref(0)
 const windowStartY = ref(0)
 
+// 调整大小相关
+const isResizing = ref(false)
+const resizeDirection = ref<string>('')
+const resizeStartX = ref(0)
+const resizeStartY = ref(0)
+const windowStartWidth = ref(0)
+const windowStartHeight = ref(0)
+
 // 获取对应的组件
 const widgetComponent = computed(() => {
   switch (props.type) {
@@ -60,6 +68,9 @@ const startDrag = async (e: MouseEvent) => {
   // 只响应左键
   if (e.button !== 0) return
 
+  // 如果正在调整大小，禁止拖拽
+  if (isResizing.value) return
+
   isDragging.value = true
   dragStartX.value = e.screenX
   dragStartY.value = e.screenY
@@ -97,13 +108,99 @@ const stopDrag = () => {
   document.removeEventListener('mouseup', stopDrag)
 }
 
+// 开始调整大小
+const startResize = async (e: MouseEvent, direction: string) => {
+  if (e.button !== 0) return
+
+  isResizing.value = true
+  resizeDirection.value = direction
+  resizeStartX.value = e.screenX
+  resizeStartY.value = e.screenY
+
+  // 获取当前窗口位置和大小
+  const pos = await window.electron.ipcRenderer.invoke('widget:getPosition', props.type)
+  const size = await window.electron.ipcRenderer.invoke('widget:getSize', props.type)
+
+  windowStartX.value = pos[0]
+  windowStartY.value = pos[1]
+  windowStartWidth.value = size.width
+  windowStartHeight.value = size.height
+
+  // 添加全局事件监听
+  document.addEventListener('mousemove', onResize)
+  document.addEventListener('mouseup', stopResize)
+
+  e.preventDefault()
+  e.stopPropagation()
+}
+
+// 调整大小中
+const onResize = (e: MouseEvent) => {
+  if (!isResizing.value) return
+
+  const deltaX = e.screenX - resizeStartX.value
+  const deltaY = e.screenY - resizeStartY.value
+
+  let newX = windowStartX.value
+  let newY = windowStartY.value
+  let newWidth = windowStartWidth.value
+  let newHeight = windowStartHeight.value
+
+  const dir = resizeDirection.value
+  const minWidth = 150
+  const minHeight = 100
+
+  // 处理不同方向的调整
+  if (dir.includes('e')) {
+    // 右边
+    newWidth = Math.max(minWidth, windowStartWidth.value + deltaX)
+  }
+  if (dir.includes('w')) {
+    // 左边 - 修复计算逻辑
+    const proposedWidth = Math.max(minWidth, windowStartWidth.value - deltaX)
+    const widthDiff = windowStartWidth.value - proposedWidth
+    newWidth = proposedWidth
+    newX = windowStartX.value + widthDiff
+  }
+  if (dir.includes('s')) {
+    // 下边
+    newHeight = Math.max(minHeight, windowStartHeight.value + deltaY)
+  }
+  if (dir.includes('n')) {
+    // 上边 - 修复计算逻辑
+    const proposedHeight = Math.max(minHeight, windowStartHeight.value - deltaY)
+    const heightDiff = windowStartHeight.value - proposedHeight
+    newHeight = proposedHeight
+    newY = windowStartY.value + heightDiff
+  }
+
+  // 更新窗口大小和位置
+  if (dir.includes('w') || dir.includes('n')) {
+    // 如果调整左边或上边，需要同时更新位置
+    window.electron.ipcRenderer.invoke('widget:setBounds', props.type, newX, newY, newWidth, newHeight)
+  } else {
+    // 只调整大小
+    window.electron.ipcRenderer.invoke('widget:setSize', props.type, newWidth, newHeight)
+  }
+}
+
+// 停止调整大小
+const stopResize = () => {
+  isResizing.value = false
+  resizeDirection.value = ''
+  document.removeEventListener('mousemove', onResize)
+  document.removeEventListener('mouseup', stopResize)
+}
+
 onMounted(() => {
-  console.log(`[StandaloneWidget] ${props.type} 已挂载，手动拖拽已启用`)
+  console.log(`[StandaloneWidget] ${props.type} 已挂载，手动拖拽和调整大小已启用`)
 })
 
 onUnmounted(() => {
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', stopDrag)
+  document.removeEventListener('mousemove', onResize)
+  document.removeEventListener('mouseup', stopResize)
 })
 </script>
 
@@ -115,6 +212,19 @@ onUnmounted(() => {
       @mousedown="startDrag"
       :class="{ dragging: isDragging }"
     ></div>
+
+    <!-- 调整大小手柄 -->
+    <!-- 边缘手柄 -->
+    <div class="resize-handle resize-n" @mousedown="(e) => startResize(e, 'n')"></div>
+    <div class="resize-handle resize-e" @mousedown="(e) => startResize(e, 'e')"></div>
+    <div class="resize-handle resize-s" @mousedown="(e) => startResize(e, 's')"></div>
+    <div class="resize-handle resize-w" @mousedown="(e) => startResize(e, 'w')"></div>
+
+    <!-- 角落手柄 -->
+    <div class="resize-handle resize-nw" @mousedown="(e) => startResize(e, 'nw')"></div>
+    <div class="resize-handle resize-ne" @mousedown="(e) => startResize(e, 'ne')"></div>
+    <div class="resize-handle resize-sw" @mousedown="(e) => startResize(e, 'sw')"></div>
+    <div class="resize-handle resize-se" @mousedown="(e) => startResize(e, 'se')"></div>
 
     <!-- 内容区域 -->
     <div class="widget-content">
@@ -128,11 +238,11 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   height: 100%;
-  background: rgba(26, 26, 26, 0.95);
+  background: rgba(26, 26, 26, 0.75);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(20px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -167,6 +277,92 @@ onUnmounted(() => {
     rgba(139, 92, 246, 0.3),
     transparent
   );
+}
+
+/* 调整大小手柄基础样式 */
+.resize-handle {
+  position: absolute;
+  z-index: 15;
+  background: transparent;
+  transition: background 0.2s;
+}
+
+.resize-handle:hover {
+  background: rgba(139, 92, 246, 0.3);
+}
+
+/* 边缘手柄 */
+.resize-n {
+  top: 0;
+  left: 8px;
+  right: 8px;
+  height: 8px;
+  cursor: ns-resize;
+  border-radius: 12px 12px 0 0;
+}
+
+.resize-e {
+  top: 8px;
+  right: 0;
+  bottom: 8px;
+  width: 8px;
+  cursor: ew-resize;
+  border-radius: 0 12px 12px 0;
+}
+
+.resize-s {
+  bottom: 0;
+  left: 8px;
+  right: 8px;
+  height: 8px;
+  cursor: ns-resize;
+  border-radius: 0 0 12px 12px;
+}
+
+.resize-w {
+  top: 8px;
+  left: 0;
+  bottom: 8px;
+  width: 8px;
+  cursor: ew-resize;
+  border-radius: 12px 0 0 12px;
+}
+
+/* 角落手柄 */
+.resize-nw {
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+  border-radius: 12px 0 0 0;
+}
+
+.resize-ne {
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nesw-resize;
+  border-radius: 0 12px 0 0;
+}
+
+.resize-sw {
+  bottom: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nesw-resize;
+  border-radius: 0 0 0 12px;
+}
+
+.resize-se {
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+  border-radius: 0 0 12px 0;
 }
 
 .widget-content {

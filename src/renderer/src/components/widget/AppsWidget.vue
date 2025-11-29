@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { NButton, NIcon, NEmpty } from 'naive-ui'
+import { NIcon } from 'naive-ui'
 import { AddCircleOutline, CloseCircleOutline } from '@vicons/ionicons5'
 
 interface App {
@@ -73,22 +73,18 @@ onMounted(() => {
 
 <template>
   <div class="apps-widget">
-    <div class="apps-header">
-      <n-button size="small" @click="addApp" secondary>
-        <template #icon>
-          <n-icon :component="AddCircleOutline" />
-        </template>
-        添加应用
-      </n-button>
-    </div>
+    <div class="apps-grid">
+      <!-- 添加应用按钮 -->
+      <div class="app-item add-item" @click="addApp">
+        <div class="app-icon-wrapper">
+          <div class="add-icon-placeholder">
+            <n-icon :component="AddCircleOutline" :size="32" />
+          </div>
+        </div>
+        <div class="app-name">添加应用</div>
+      </div>
 
-    <n-empty v-if="apps.length === 0" description="暂无应用" size="small">
-      <template #icon>
-        <span style="font-size: 32px">📱</span>
-      </template>
-    </n-empty>
-
-    <div v-else class="apps-grid">
+      <!-- 应用列表 -->
       <div v-for="(app, index) in apps" :key="index" class="app-item">
         <div class="app-icon-wrapper" @click="launchApp(app)">
           <div v-if="!app.icon" class="app-icon-placeholder">
@@ -110,12 +106,6 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.apps-header {
-  display: flex;
-  justify-content: flex-end;
 }
 
 .apps-grid {
@@ -131,6 +121,15 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 6px;
+}
+
+.add-item {
+  cursor: pointer;
+}
+
+.add-item:hover .add-icon-placeholder {
+  background: linear-gradient(135deg, #9d72f7, #8b5cf6);
+  transform: scale(1.05);
 }
 
 .app-icon-wrapper {
@@ -155,6 +154,19 @@ onMounted(() => {
   font-size: 24px;
   font-weight: 600;
   color: white;
+}
+
+.add-icon-placeholder {
+  width: 100%;
+  height: 100%;
+  background: rgba(139, 92, 246, 0.2);
+  border: 2px dashed rgba(139, 92, 246, 0.5);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8b5cf6;
+  transition: all 0.2s;
 }
 
 .app-icon {

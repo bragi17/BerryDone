@@ -40,7 +40,7 @@
       </div>
       <div class="menu-item widget-button" @click="toggleWidget">
         <n-icon :component="GridOutline" />
-        <span>桌面小组件</span>
+        <span>Desktop Widgets</span>
       </div>
     </div>
 
