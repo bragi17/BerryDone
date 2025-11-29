@@ -118,11 +118,9 @@ function createCalendarWindow(): void {
     y: 20,
     frame: false,
     transparent: true,
-    resizable: true,
-    minWidth: 280,
-    minHeight: 320,
+    resizable: false,
     skipTaskbar: true,
-    alwaysOnTop: false,
+    alwaysOnTop: true,
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -163,11 +161,9 @@ function createTodoWindow(): void {
     y: 20,
     frame: false,
     transparent: true,
-    resizable: true,
-    minWidth: 280,
-    minHeight: 320,
+    resizable: false,
     skipTaskbar: true,
-    alwaysOnTop: false,
+    alwaysOnTop: true,
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -208,11 +204,9 @@ function createAppsWindow(): void {
     y: 400,
     frame: false,
     transparent: true,
-    resizable: true,
-    minWidth: 280,
-    minHeight: 180,
+    resizable: false,
     skipTaskbar: true,
-    alwaysOnTop: false,
+    alwaysOnTop: true,
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -253,11 +247,9 @@ function createQuickRepliesWindow(): void {
     y: 460,
     frame: false,
     transparent: true,
-    resizable: true,
-    minWidth: 280,
-    minHeight: 120,
+    resizable: false,
     skipTaskbar: true,
-    alwaysOnTop: false,
+    alwaysOnTop: true,
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -757,6 +749,57 @@ function registerWidgetHandlers(): void {
 
   ipcMain.handle('widget:minimize', () => {
     // 已被 widget:minimizeAll 取代
+  })
+
+  // 获取窗口位置
+  ipcMain.handle('widget:getPosition', (_event, type: string) => {
+    let window: BrowserWindow | null = null
+    switch (type) {
+      case 'control':
+        window = controlPanelWindow
+        break
+      case 'calendar':
+        window = calendarWindow
+        break
+      case 'todo':
+        window = todoWindow
+        break
+      case 'apps':
+        window = appsWindow
+        break
+      case 'quick-replies':
+        window = quickRepliesWindow
+        break
+    }
+    if (window && !window.isDestroyed()) {
+      return window.getPosition()
+    }
+    return [0, 0]
+  })
+
+  // 设置窗口位置
+  ipcMain.handle('widget:setPosition', (_event, type: string, x: number, y: number) => {
+    let window: BrowserWindow | null = null
+    switch (type) {
+      case 'control':
+        window = controlPanelWindow
+        break
+      case 'calendar':
+        window = calendarWindow
+        break
+      case 'todo':
+        window = todoWindow
+        break
+      case 'apps':
+        window = appsWindow
+        break
+      case 'quick-replies':
+        window = quickRepliesWindow
+        break
+    }
+    if (window && !window.isDestroyed()) {
+      window.setPosition(Math.round(x), Math.round(y))
+    }
   })
 
   // 选择应用程序

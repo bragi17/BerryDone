@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import CalendarWidget from './CalendarWidget.vue'
 import TodoWidget from './TodoWidget.vue'
 import AppsWidget from './AppsWidget.vue'
@@ -9,21 +9,15 @@ const props = defineProps<{
   type: string
 }>()
 
-// 获取标题
-const title = computed(() => {
-  switch (props.type) {
-    case 'calendar':
-      return '📅 日历'
-    case 'todo':
-      return '✅ 今日待办'
-    case 'apps':
-      return '📱 应用快捷启动'
-    case 'quick-replies':
-      return '💬 快捷回复'
-    default:
-      return '小组件'
-  }
-})
+// 双击右键关闭相关
+const lastRightClickTime = ref(0)
+
+// 拖拽相关
+const isDragging = ref(false)
+const dragStartX = ref(0)
+const dragStartY = ref(0)
+const windowStartX = ref(0)
+const windowStartY = ref(0)
 
 // 获取对应的组件
 const widgetComponent = computed(() => {
@@ -45,22 +39,82 @@ const widgetComponent = computed(() => {
 const closeWindow = () => {
   window.electron.ipcRenderer.invoke('widget:close', props.type)
 }
+
+// 右键菜单处理 - 双击右键关闭
+const handleContextMenu = (e: MouseEvent) => {
+  e.preventDefault()
+
+  const now = Date.now()
+  const timeDiff = now - lastRightClickTime.value
+
+  // 500ms 内连续两次右键点击则关闭
+  if (timeDiff < 500 && timeDiff > 0) {
+    closeWindow()
+  }
+
+  lastRightClickTime.value = now
+}
+
+// 开始拖拽
+const startDrag = async (e: MouseEvent) => {
+  // 只响应左键
+  if (e.button !== 0) return
+
+  isDragging.value = true
+  dragStartX.value = e.screenX
+  dragStartY.value = e.screenY
+
+  // 获取当前窗口位置
+  const pos = await window.electron.ipcRenderer.invoke('widget:getPosition', props.type)
+  windowStartX.value = pos[0]
+  windowStartY.value = pos[1]
+
+  // 添加全局事件监听
+  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mouseup', stopDrag)
+
+  // 防止选中文字
+  e.preventDefault()
+}
+
+// 拖拽中
+const onDrag = (e: MouseEvent) => {
+  if (!isDragging.value) return
+
+  const deltaX = e.screenX - dragStartX.value
+  const deltaY = e.screenY - dragStartY.value
+
+  const newX = windowStartX.value + deltaX
+  const newY = windowStartY.value + deltaY
+
+  window.electron.ipcRenderer.invoke('widget:setPosition', props.type, newX, newY)
+}
+
+// 停止拖拽
+const stopDrag = () => {
+  isDragging.value = false
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', stopDrag)
+}
+
+onMounted(() => {
+  console.log(`[StandaloneWidget] ${props.type} 已挂载，手动拖拽已启用`)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', stopDrag)
+})
 </script>
 
 <template>
-  <div class="standalone-widget">
-    <!-- 拖拽区域 -->
-    <div class="widget-header" style="-webkit-app-region: drag">
-      <span class="widget-title">{{ title }}</span>
-      <button
-        class="close-btn"
-        @click="closeWindow"
-        title="关闭"
-        style="-webkit-app-region: no-drag"
-      >
-        ×
-      </button>
-    </div>
+  <div class="standalone-widget" @contextmenu="handleContextMenu">
+    <!-- 拖拽区域 - 顶部 30px -->
+    <div
+      class="drag-handle"
+      @mousedown="startDrag"
+      :class="{ dragging: isDragging }"
+    ></div>
 
     <!-- 内容区域 -->
     <div class="widget-content">
@@ -71,11 +125,12 @@ const closeWindow = () => {
 
 <style scoped>
 .standalone-widget {
+  position: relative;
   width: 100%;
   height: 100%;
   background: rgba(26, 26, 26, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(10px);
   display: flex;
@@ -83,48 +138,41 @@ const closeWindow = () => {
   overflow: hidden;
 }
 
-.widget-header {
-  padding: 10px 12px;
-  background: rgba(139, 92, 246, 0.2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+/* 拖拽区域 */
+.drag-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
   cursor: move;
-  user-select: none;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  z-index: 10;
+  border-radius: 12px 12px 0 0;
+  transition: background 0.2s;
 }
 
-.widget-title {
-  color: #e0e0e0;
-  font-size: 14px;
-  font-weight: 500;
+/* hover 时提示 */
+.drag-handle:hover {
+  background: linear-gradient(
+    to bottom,
+    rgba(139, 92, 246, 0.2),
+    transparent
+  );
 }
 
-.close-btn {
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: rgba(255, 255, 255, 0.1);
-  color: #e0e0e0;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  padding: 0;
-  line-height: 1;
-}
-
-.close-btn:hover {
-  background: #f44336;
-  color: white;
+/* 拖拽中状态 */
+.drag-handle.dragging {
+  background: linear-gradient(
+    to bottom,
+    rgba(139, 92, 246, 0.3),
+    transparent
+  );
 }
 
 .widget-content {
   flex: 1;
   padding: 12px;
+  padding-top: 8px;
   overflow: auto;
   color: #e0e0e0;
 }

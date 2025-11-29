@@ -37,3 +37,28 @@ onMounted(() => {
   overflow: hidden;
 }
 </style>
+
+<style>
+/* 全局样式 - app-region 需要非 scoped 才能正确工作 */
+.drag-handle {
+  -webkit-app-region: drag !important;
+  app-region: drag !important;
+}
+
+.panel-header {
+  -webkit-app-region: drag !important;
+  app-region: drag !important;
+}
+
+.widget-content,
+.panel-content {
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+}
+
+/* 确保按钮等交互元素不被拖拽影响 */
+button, input, select, textarea, a, .n-button {
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+}
+</style>

@@ -26,7 +26,7 @@ const closeApp = () => {
 
 <template>
   <div class="control-panel">
-    <div class="panel-header" style="-webkit-app-region: drag">
+    <div class="panel-header">
       <span class="panel-title">🍓 控制面板</span>
     </div>
 
@@ -75,6 +75,8 @@ const closeApp = () => {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   cursor: move;
   user-select: none;
+  -webkit-app-region: drag;
+  app-region: drag;
 }
 
 .panel-title {
@@ -89,6 +91,8 @@ const closeApp = () => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .control-button {
