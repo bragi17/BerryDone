@@ -3,7 +3,7 @@ import { chromium } from 'playwright'
 import fs from 'fs'
 import path from 'path'
 
-const COOKIES_FILE = path.join(process.cwd(), 'cookies', 'fur31mu.json')
+const COOKIES_FILE = path.join(process.cwd(), 'data', 'cookies', 'fur31mu.json')
 const OUTPUT_FILE = path.join(process.cwd(), 'vgen-services-data.json')
 
 interface VGenService {

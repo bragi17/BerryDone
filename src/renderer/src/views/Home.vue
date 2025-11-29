@@ -753,14 +753,33 @@ const getCommissionName = (commissionId: string) => {
 .home-view {
   padding: 20px;
   max-width: 1500px;
-  min-width: 1100px;
+  min-width: 900px;  /* 降低最小宽度以支持2K及更小屏幕 */
   width: 100%;
   margin: 0 auto;
   height: 100vh;
-  overflow: hidden; /* 禁止滚动 */
+  overflow-y: auto; /* 允许垂直滚动 */
+  overflow-x: hidden; /* 禁止水平滚动 */
   display: flex;
   flex-direction: column;
   gap: 16px; /* 减少间距 */
+}
+
+/* 可视化滚动条 */
+.home-view::-webkit-scrollbar {
+  width: 6px;
+}
+
+.home-view::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.home-view::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+.home-view::-webkit-scrollbar-thumb:hover {
+  background: #444;
 }
 
 .home-header {
@@ -864,9 +883,8 @@ const getCommissionName = (commissionId: string) => {
 }
 
 .calendar-day {
-  height: 80px; /* 减小日期格子高度 */
-  min-height: 80px;
-  max-height: 80px;
+  height: clamp(70px, 8vh, 100px); /* 响应式高度：最小70px，理想8vh，最大100px */
+  min-height: 70px;
   border: 1px solid #2a2a2a;
   border-radius: 12px;
   padding: 8px; /* 减少内边距 */

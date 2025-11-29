@@ -286,7 +286,7 @@ const formatDate = (dateStr?: string) => {
 .dashboard-view {
   padding: 24px;
   max-width: 1500px;
-  min-width: 1100px;
+  min-width: 900px;  /* 降低最小宽度以支持2K及更小屏幕 */
   width: 100%;
   margin: 0 auto;
   height: 100vh;

@@ -1,17 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node:*)",
-      "Bash(pnpm tsx:*)",
-      "Bash(powershell:*)",
-      "Bash(npx tsx:*)",
-      "Bash(git remote add:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(pnpm dev:*)",
-      "Bash(git push:*)",
-      "Bash(git config:*)",
-      "Bash(timeout 60 git push)"
+      "Bash(dir:*)",
+      "Bash(timeout:*)",
+      "Bash(pnpm build:win:no-check:*)",
+      "Bash(taskkill:*)",
+      "Bash(pnpm build:scripts:*)",
+      "Bash(pnpm electron-builder:*)",
+      "Bash(set NODE_PATH=D:ProjectTodoListBerryDonedistwin-unpackedresourcesapp.asar.unpackednode_modules)",
+      "Bash(node resourcesscriptsfetch-vgen-browser.js:*)",
+      "Bash(set NODE_PATH=D:/Project/TodoList/BerryDone/dist/win-unpacked/resources/app.asar.unpacked/node_modules)",
+      "Bash(node scripts/fetch-vgen-browser.js:*)",
+      "Bash(find:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

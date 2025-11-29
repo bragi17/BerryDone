@@ -9,16 +9,50 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!cookies/**'
+  - '!docs/**'
+  - '!dist/**'
+  - '!*.md'
 asarUnpack:
   - resources/**
+extraResources:
+  - from: data
+    to: data
+    filter:
+      - '**/*'
+  - from: scripts
+    to: scripts
+    filter:
+      - '**/*.js'  # 只打包编译后的 .js 文件
+      - '**/*.mjs'
+  # pnpm 使用符号链接，需要从实际路径复制
+  # playwright 需要外部引用（有浏览器二进制文件）
+  - from: node_modules/.pnpm/playwright@1.56.1/node_modules/playwright
+    to: app.asar.unpacked/node_modules/playwright
+  - from: node_modules/.pnpm/playwright-core@1.56.1/node_modules/playwright-core
+    to: app.asar.unpacked/node_modules/playwright-core
 win:
   executableName: berrydone
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  sign: false  # ✨ 禁用代码签名
+  signAndEditExecutable: false  # ✨ 完全禁用签名工具下载
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  installerIcon: build/icon.ico        # ✨ 安装程序图标
+  uninstallerIcon: build/icon.ico      # ✨ 卸载程序图标
+  installerHeaderIcon: build/icon.ico  # ✨ 安装程序头部图标
+  oneClick: false                      # 允许用户自定义安装
+  allowToChangeInstallationDirectory: true  # 允许更改安装目录
+  perMachine: false                    # 用户级安装（不需要管理员权限）
 mac:
+  icon: resources/icon.png  # macOS 图标（可选，会自动转为 .icns）
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
@@ -29,6 +63,7 @@ mac:
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
+  icon: resources/icon.png  # Linux 图标（PNG 格式）
   target:
     - AppImage
     - snap

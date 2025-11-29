@@ -14,13 +14,19 @@ vgen-*.json
 
 # Database files (local data)
 berrydone-test.json
-data/berrydone.json
+data/
+
+# Compiled scripts (TypeScript -> JavaScript)
+scripts/**/*.js
+scripts/**/*.mjs
+!scripts/build-scripts.mjs
 
 # OS files
 Thumbs.db
 *.swp
 *.swo
 *~
+nul
 
 # IDE
 .vscode/*

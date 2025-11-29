@@ -324,7 +324,7 @@ function registerDBHandlers(): void {
   })
 }
 
-// 定时任务管理
+/* 定时任务管理（预留功能，暂时未启用）
 let commissionsUpdateTimer: NodeJS.Timeout | null = null
 let servicesUpdateTimer: NodeJS.Timeout | null = null
 
@@ -380,6 +380,7 @@ function setupAutoUpdate() {
   scheduleServicesUpdate()
   scheduleCommissionsUpdate()
 }
+*/
 
 // 注册 VGen IPC 处理器
 function registerVGenHandlers(): void {
@@ -433,6 +434,9 @@ app.whenReady().then(async () => {
 
   createWindow()
 
+  // 启动自动更新（可选功能，用户也可以手动更新）
+  // setupAutoUpdate()
+
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.
@@ -444,14 +448,15 @@ app.whenReady().then(async () => {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
-  // 清理定时器
+  /* 清理定时器（功能未启用）
   if (commissionsUpdateTimer) {
     clearInterval(commissionsUpdateTimer)
   }
   if (servicesUpdateTimer) {
     clearTimeout(servicesUpdateTimer)
   }
-  
+  */
+
   if (process.platform !== 'darwin') {
     app.quit()
   }

@@ -99,7 +99,19 @@ const defaultData: Database = {
 let db: Low<Database>
 
 export async function initDB(): Promise<Low<Database>> {
-  const dbPath = join(app.getPath('userData'), 'berrydone.json')
+  // 数据库路径：优先使用安装目录下的 data 文件夹（便于备份和管理）
+  let dbPath: string
+
+  if (app.isPackaged) {
+    // 打包环境：使用 resources/data/berrydone.json
+    dbPath = join(process.resourcesPath, 'data', 'berrydone.json')
+  } else {
+    // 开发环境：使用项目根目录的 data/berrydone.json
+    dbPath = join(process.cwd(), 'data', 'berrydone.json')
+  }
+
+  console.log('[DB] 数据库路径:', dbPath)
+
   const adapter = new JSONFile<Database>(dbPath)
   db = new Low<Database>(adapter, defaultData)
 
@@ -134,6 +146,6 @@ export function getDB(): Low<Database> {
   return db
 }
 
-// 导出 VGenService 和 WorkHoursConfig 类型供其他模块使用
-export type { VGenService, WorkHoursConfig }
+// 导出 VGenService 类型供其他模块使用
+export type { VGenService }
 

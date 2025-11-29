@@ -36,18 +36,21 @@
     </div>
 
     <!-- 更新进度 -->
-    <n-alert 
-      v-if="updating" 
-      type="info" 
+    <n-alert
+      v-if="updating"
+      type="info"
       class="update-progress"
       :bordered="false"
     >
       <div class="progress-content">
         <n-spin size="small" />
-        <span>{{ updateMessage }}</span>
-        <n-progress 
-          type="line" 
-          :percentage="updateProgress" 
+        <div class="progress-text">
+          <span>{{ updateMessage }}</span>
+          <span v-if="updateLog" class="progress-log">{{ updateLog }}</span>
+        </div>
+        <n-progress
+          type="line"
+          :percentage="updateProgress"
           :show-indicator="false"
           style="flex: 1; margin-left: 16px;"
         />
@@ -526,6 +529,7 @@ const orderedServiceIds = ref<Set<string>>(new Set())
 const updating = ref(false)
 const updateProgress = ref(0)
 const updateMessage = ref('')
+const updateLog = ref('')  // 终端日志信息
 
 // 筛选相关
 const selectedCategory = ref<string | null>(null)
@@ -925,6 +929,7 @@ onMounted(async () => {
   window.api.vgen.onUpdateProgress((progress) => {
     updateProgress.value = progress.progress
     updateMessage.value = progress.message
+    updateLog.value = progress.log || ''  // 更新日志信息
   })
 })
 
@@ -937,7 +942,7 @@ onBeforeUnmount(() => {
 .commissions-view {
   padding: 24px;
   max-width: 1500px;
-  min-width: 1100px;
+  min-width: 900px;  /* 降低最小宽度以支持2K及更小屏幕 */
   width: 100%;
   margin: 0 auto;
   height: 100vh;
@@ -992,6 +997,20 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.progress-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+
+.progress-log {
+  font-size: 11px;
+  color: #888;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  opacity: 0.8;
 }
 
 /* 筛选栏 */

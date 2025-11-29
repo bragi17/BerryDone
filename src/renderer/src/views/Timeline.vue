@@ -37,19 +37,22 @@
     </div>
 
     <!-- 更新进度 -->
-    <n-alert 
-      v-if="updating" 
-      type="info" 
+    <n-alert
+      v-if="updating"
+      type="info"
       class="update-progress"
       :bordered="false"
       style="margin-bottom: 16px;"
     >
       <div class="progress-content">
         <n-spin size="small" />
-        <span>{{ updateMessage }}</span>
-        <n-progress 
-          type="line" 
-          :percentage="updateProgress" 
+        <div class="progress-text">
+          <span>{{ updateMessage }}</span>
+          <span v-if="updateLog" class="progress-log">{{ updateLog }}</span>
+        </div>
+        <n-progress
+          type="line"
+          :percentage="updateProgress"
           :show-indicator="false"
           style="flex: 1; margin-left: 16px;"
         />
@@ -806,6 +809,7 @@ onBeforeRouteLeave((to, from, next) => {
 const updating = ref(false)
 const updateProgress = ref(0)
 const updateMessage = ref('')
+const updateLog = ref('')  // 终端日志信息
 
 // VGen Commissions 数据
 interface VGenCommission {
@@ -3416,6 +3420,7 @@ onMounted(async () => {
   window.api.vgen.onUpdateProgress((progress) => {
     updateProgress.value = progress.progress
     updateMessage.value = progress.message
+    updateLog.value = progress.log || ''  // 更新日志信息
   })
 
   // 等待DOM渲染完成后添加滚轮事件监听
@@ -3469,9 +3474,28 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  overflow: hidden;
+  overflow-y: auto; /* 允许垂直滚动 */
+  overflow-x: hidden; /* 禁止水平滚动 */
   background: #0a0a0a;
   color: #e0e0e0;
+}
+
+/* 可视化滚动条 */
+.timeline-view::-webkit-scrollbar {
+  width: 6px;
+}
+
+.timeline-view::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.timeline-view::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+.timeline-view::-webkit-scrollbar-thumb:hover {
+  background: #444;
 }
 
 .timeline-header {
@@ -4911,6 +4935,27 @@ onBeforeUnmount(() => {
   height: 1px;
   background: #2a2a2a;
   margin: 8px 0;
+}
+
+/* 更新进度样式 */
+.progress-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+
+.progress-log {
+  font-size: 11px;
+  color: #888;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  opacity: 0.8;
 }
 </style>
 
