@@ -269,7 +269,7 @@
                 <div class="tasks-overlay">
                   <!-- 任务卡片 -->
                   <n-tooltip
-                    v-for="task in getPositionedScheduledTasks()"
+                    v-for="task in positionedScheduledTasks"
                     :key="task.taskId || task.commissionId"
                     :delay="500"
                     placement="top"
@@ -1307,7 +1307,8 @@ const getTaskUniqueDays = (task: ScheduledTask) => {
 }
 
 // 计算任务在网格中的位置
-const getPositionedScheduledTasks = () => {
+// ✨ 性能优化：改为 computed 属性，避免每次渲染都重新计算
+const positionedScheduledTasks = computed(() => {
   return scheduledTasks.value.map(task => {
     const startDate = new Date(task.startDate)
     const endDate = new Date(task.endDate)
@@ -1332,6 +1333,11 @@ const getPositionedScheduledTasks = () => {
       displayEndDate: endDate > periodEnd ? periodEnd : endDate
     }
   }).filter(Boolean)
+})
+
+// 保留原函数名以兼容模板中的调用（重定向到 computed）
+const getPositionedScheduledTasks = () => {
+  return positionedScheduledTasks.value
 }
 
 // 计算每日的实际宽度（按周视图时自适应）
@@ -2033,15 +2039,24 @@ const handleCardResizeEnd = () => {
 }
 
 // 智能卡片放置功能 - 检测和解决冲突
+// ✨ 性能优化：使用索引快速查找目标日期的任务
 const checkTaskConflict = (task: ExtendedScheduledTask, targetDate: string, targetHour: number, excludeTaskId?: string) => {
-  // 获取目标日期的所有任务
-  const dayTasks = scheduledTasks.value.filter(t => {
-    // ✅ Bug Fix: 使用 taskId 或 commissionId 进行比较，正确排除当前任务
-    const tId = t.taskId || t.commissionId
-    if (tId === excludeTaskId) return false
-    const extTask = t as ExtendedScheduledTask
-    return t.workDays.includes(targetDate)
-  })
+  // ✨ 性能优化：优先使用索引，O(1) 查找代替 O(n) 遍历
+  let dayTasks: ScheduledTask[]
+  if (tasksByDateIndex.value && tasksByDateIndex.value.has(targetDate)) {
+    // 使用索引快速获取当天任务
+    dayTasks = tasksByDateIndex.value.get(targetDate)!.filter(t => {
+      const tId = t.taskId || t.commissionId
+      return tId !== excludeTaskId
+    })
+  } else {
+    // 回退到原始遍历方式（索引未构建时）
+    dayTasks = scheduledTasks.value.filter(t => {
+      const tId = t.taskId || t.commissionId
+      if (tId === excludeTaskId) return false
+      return t.workDays.includes(targetDate)
+    })
+  }
 
   // 检查时间冲突
   const conflicts: ExtendedScheduledTask[] = []
@@ -2379,6 +2394,12 @@ const handleCardDragStart = (event: MouseEvent, task: ScheduledTask) => {
     modifiedTasksBackup.value = JSON.parse(JSON.stringify(scheduledTasks.value))
   }
 
+  // ✨ 性能优化：构建任务索引
+  buildTasksIndex()
+
+  // ✨ 性能优化：禁用过渡动画
+  document.body.classList.add('timeline-dragging')
+
   // ✨ 设置操作状态
   currentOperation.value = 'dragging'
   isDraggingCard.value = true
@@ -2411,6 +2432,29 @@ let cachedSchedulerContent: Element | null = null
 let cachedSchedulerContainer: Element | null = null
 let dragAnimationFrame: number | null = null
 let markedTasks: Set<any> | null = null // 追踪有标记的任务
+
+// ✨ 性能优化：按日期索引任务，避免每次拖动都遍历所有任务
+const tasksByDateIndex = ref<Map<string, ScheduledTask[]> | null>(null)
+
+// 构建按日期索引的任务Map
+const buildTasksIndex = () => {
+  const index = new Map<string, ScheduledTask[]>()
+  scheduledTasks.value.forEach(task => {
+    task.workDays.forEach(day => {
+      if (!index.has(day)) {
+        index.set(day, [])
+      }
+      index.get(day)!.push(task)
+    })
+  })
+  tasksByDateIndex.value = index
+  console.log('[Timeline] 构建任务索引，共', index.size, '个日期')
+}
+
+// 清除索引
+const clearTasksIndex = () => {
+  tasksByDateIndex.value = null
+}
 
 // ✨ 性能优化：辅助函数 - 设置标记并加入追踪
 const setTaskMark = (task: any, mark: string) => {
@@ -2872,6 +2916,12 @@ const handleCardDragEnd = () => {
     // ✨ 性能优化：清除DOM缓存
     cachedSchedulerContent = null
     cachedSchedulerContainer = null
+
+    // ✨ 性能优化：清除任务索引
+    clearTasksIndex()
+
+    // ✨ 性能优化：恢复过渡动画
+    document.body.classList.remove('timeline-dragging')
 
     // 重置碰撞计时状态
     collisionStartTime.value = null
@@ -5001,6 +5051,15 @@ onBeforeUnmount(() => {
   color: #888;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   opacity: 0.8;
+}
+
+/* ✨ 性能优化：拖动时禁用所有过渡动画 */
+:global(.timeline-dragging) .scheduled-task-card {
+  transition: none !important;
+}
+
+:global(.timeline-dragging) .scheduled-task-card * {
+  transition: none !important;
 }
 </style>
 
