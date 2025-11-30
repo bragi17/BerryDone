@@ -59,6 +59,22 @@ export interface VGenCommission {
   _raw?: any
 }
 
+// 小组件布局配置
+export interface WidgetBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+  visible: boolean // 是否显示
+}
+
+export interface WidgetLayout {
+  calendar?: WidgetBounds
+  todo?: WidgetBounds
+  apps?: WidgetBounds
+  'quick-replies'?: WidgetBounds
+}
+
 export interface Database {
   tasks: Task[]
   projects: Project[]
@@ -67,6 +83,7 @@ export interface Database {
   schedulerState?: SchedulerState // 智能排单状态
   workHoursConfig?: WorkHoursConfig // 工时配置
   priorityConfig?: PriorityConfig // 优先级配置
+  widgetLayout?: WidgetLayout // 小组件布局配置
 }
 
 // 工时配置

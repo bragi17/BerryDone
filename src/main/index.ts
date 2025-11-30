@@ -380,6 +380,58 @@ function broadcastStateChange() {
   }
 }
 
+// 保存小组件布局到数据库
+async function saveWidgetLayout() {
+  const db = getDB()
+  if (!db) return
+
+  const layout: Record<string, any> = {}
+
+  // 保存每个小组件的位置、大小和可见性
+  const widgets: Array<{ type: string; window: BrowserWindow | null }> = [
+    { type: 'calendar', window: calendarWindow },
+    { type: 'todo', window: todoWindow },
+    { type: 'apps', window: appsWindow },
+    { type: 'quick-replies', window: quickRepliesWindow }
+  ]
+
+  for (const { type, window } of widgets) {
+    if (window && !window.isDestroyed()) {
+      const bounds = window.getBounds()
+      layout[type] = {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        visible: window.isVisible()
+      }
+    } else {
+      // 窗口不存在，标记为不可见，使用默认尺寸
+      const defaultSize = getWidgetSize(type)
+      layout[type] = {
+        x: 0,
+        y: 0,
+        width: defaultSize.width,
+        height: defaultSize.height,
+        visible: false
+      }
+    }
+  }
+
+  db.data.widgetLayout = layout
+  await db.write()
+  console.log('[Main] 小组件布局已保存:', layout)
+}
+
+// 从数据库加载小组件布局
+function loadWidgetLayout(): Record<string, any> | null {
+  const db = getDB()
+  if (!db || !db.data.widgetLayout) return null
+
+  console.log('[Main] 加载小组件布局:', db.data.widgetLayout)
+  return db.data.widgetLayout as Record<string, any>
+}
+
 // 广播任务更新到所有窗口
 function broadcastTasksUpdate() {
   console.log('[Main] broadcastTasksUpdate 开始')
@@ -502,13 +554,17 @@ function createCalendarWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width, height } = primaryDisplay.workAreaSize
 
+  // 加载保存的布局
+  const savedLayout = loadWidgetLayout()
+  const calendarLayout = savedLayout?.calendar
+
   calendarWindow = new BrowserWindow({
-    width: 340,
-    height: 410,
+    width: calendarLayout?.width || 340,
+    height: calendarLayout?.height || 410,
     minWidth: 150,
     minHeight: 100,
-    x: 20,
-    y: 20,
+    x: calendarLayout?.x || 20,
+    y: calendarLayout?.y || 20,
     frame: false,
     transparent: true,
     resizable: true,
@@ -548,13 +604,17 @@ function createTodoWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width, height } = primaryDisplay.workAreaSize
 
+  // 加载保存的布局
+  const savedLayout = loadWidgetLayout()
+  const todoLayout = savedLayout?.todo
+
   todoWindow = new BrowserWindow({
-    width: 320,
-    height: 90,
+    width: todoLayout?.width || 320,
+    height: todoLayout?.height || 90,
     minWidth: 150,
     minHeight: 100,
-    x: 360,
-    y: 20,
+    x: todoLayout?.x || 360,
+    y: todoLayout?.y || 20,
     frame: false,
     transparent: true,
     resizable: true,
@@ -594,13 +654,17 @@ function createAppsWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width, height } = primaryDisplay.workAreaSize
 
+  // 加载保存的布局
+  const savedLayout = loadWidgetLayout()
+  const appsLayout = savedLayout?.apps
+
   appsWindow = new BrowserWindow({
-    width: 100,
-    height: 110,
+    width: appsLayout?.width || 100,
+    height: appsLayout?.height || 110,
     minWidth: 150,
     minHeight: 100,
-    x: 20,
-    y: 400,
+    x: appsLayout?.x || 20,
+    y: appsLayout?.y || 400,
     frame: false,
     transparent: true,
     resizable: true,
@@ -640,13 +704,17 @@ function createQuickRepliesWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width, height } = primaryDisplay.workAreaSize
 
+  // 加载保存的布局
+  const savedLayout = loadWidgetLayout()
+  const quickRepliesLayout = savedLayout?.['quick-replies']
+
   quickRepliesWindow = new BrowserWindow({
-    width: 320,
-    height: 70,
+    width: quickRepliesLayout?.width || 320,
+    height: quickRepliesLayout?.height || 70,
     minWidth: 150,
     minHeight: 100,
-    x: 360,
-    y: 460,
+    x: quickRepliesLayout?.x || 360,
+    y: quickRepliesLayout?.y || 460,
     frame: false,
     transparent: true,
     resizable: true,
@@ -671,7 +739,9 @@ function createQuickRepliesWindow(): void {
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     quickRepliesWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/widget.html#quick-replies`)
   } else {
-    quickRepliesWindow.loadFile(join(__dirname, '../renderer/widget.html'), { hash: 'quick-replies' })
+    quickRepliesWindow.loadFile(join(__dirname, '../renderer/widget.html'), {
+      hash: 'quick-replies'
+    })
   }
 }
 
@@ -682,12 +752,26 @@ function openAllWidgets(): void {
     mainWindowRef.minimize()
   }
 
-  // 创建所有小组件窗口
+  // 加载保存的布局
+  const savedLayout = loadWidgetLayout()
+
+  // 控制面板始终打开
   createControlPanelWindow()
-  createCalendarWindow()
-  createTodoWindow()
-  createAppsWindow()
-  createQuickRepliesWindow()
+
+  // 根据保存的可见性状态决定是否打开其他小组件
+  // 如果没有保存的布局或者 visible !== false，则打开
+  if (!savedLayout?.calendar || savedLayout.calendar.visible !== false) {
+    createCalendarWindow()
+  }
+  if (!savedLayout?.todo || savedLayout.todo.visible !== false) {
+    createTodoWindow()
+  }
+  if (!savedLayout?.apps || savedLayout.apps.visible !== false) {
+    createAppsWindow()
+  }
+  if (!savedLayout?.['quick-replies'] || savedLayout['quick-replies'].visible !== false) {
+    createQuickRepliesWindow()
+  }
 }
 
 // 关闭所有小组件窗口
@@ -710,7 +794,9 @@ function closeAllWidgets(): void {
 }
 
 // 返回主窗口
-function returnToMainWindow(): void {
+async function returnToMainWindow(): Promise<void> {
+  // 先保存布局再关闭
+  await saveWidgetLayout()
   closeAllWidgets()
   if (mainWindowRef && !mainWindowRef.isDestroyed()) {
     mainWindowRef.restore()
@@ -1616,6 +1702,15 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+// 在应用退出前保存小组件布局
+app.on('before-quit', async (event) => {
+  // 阻止立即退出，等待保存完成
+  event.preventDefault()
+  await saveWidgetLayout()
+  // 保存完成后真正退出
+  app.exit()
 })
 
 // In this file you can include the rest of your app's specific main process
