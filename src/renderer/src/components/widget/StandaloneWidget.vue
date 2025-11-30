@@ -21,11 +21,6 @@ const windowStartY = ref(0)
 
 // 调整大小相关
 const isResizing = ref(false)
-const resizeDirection = ref<string>('')
-const resizeStartX = ref(0)
-const resizeStartY = ref(0)
-const windowStartWidth = ref(0)
-const windowStartHeight = ref(0)
 
 // 获取对应的组件
 const widgetComponent = computed(() => {
@@ -108,88 +103,66 @@ const stopDrag = () => {
   document.removeEventListener('mouseup', stopDrag)
 }
 
-// 开始调整大小
+// 开始调整大小 - 使用全局鼠标追踪
 const startResize = async (e: MouseEvent, direction: string) => {
   if (e.button !== 0) return
 
   isResizing.value = true
-  resizeDirection.value = direction
-  resizeStartX.value = e.screenX
-  resizeStartY.value = e.screenY
 
-  // 获取当前窗口位置和大小
-  const pos = await window.electron.ipcRenderer.invoke('widget:getPosition', props.type)
-  const size = await window.electron.ipcRenderer.invoke('widget:getSize', props.type)
+  // 调用主进程开始全局调整大小
+  await window.electron.ipcRenderer.invoke(
+    'widget:startGlobalResize',
+    props.type,
+    direction,
+    e.screenX,
+    e.screenY
+  )
 
-  windowStartX.value = pos[0]
-  windowStartY.value = pos[1]
-  windowStartWidth.value = size.width
-  windowStartHeight.value = size.height
-
-  // 添加全局事件监听
-  document.addEventListener('mousemove', onResize)
+  // 监听鼠标释放事件（在窗口内）
   document.addEventListener('mouseup', stopResize)
+  // 也监听全局的鼠标释放（通过定时检测）
+  startMouseUpDetection()
 
   e.preventDefault()
   e.stopPropagation()
 }
 
-// 调整大小中
-const onResize = (e: MouseEvent) => {
-  if (!isResizing.value) return
+// 鼠标释放检测（用于检测窗口外的释放）
+let mouseUpCheckInterval: number | null = null
 
-  const deltaX = e.screenX - resizeStartX.value
-  const deltaY = e.screenY - resizeStartY.value
+const startMouseUpDetection = () => {
+  // 定时检查鼠标按钮状态
+  mouseUpCheckInterval = window.setInterval(() => {
+    // 通过监听 mousemove 并检查 buttons 来判断是否释放
+  }, 100)
 
-  let newX = windowStartX.value
-  let newY = windowStartY.value
-  let newWidth = windowStartWidth.value
-  let newHeight = windowStartHeight.value
+  // 添加全局 mousemove 监听来检测鼠标释放
+  document.addEventListener('mousemove', checkMouseUp)
+}
 
-  const dir = resizeDirection.value
-  const minWidth = 150
-  const minHeight = 100
-
-  // 处理不同方向的调整
-  if (dir.includes('e')) {
-    // 右边
-    newWidth = Math.max(minWidth, windowStartWidth.value + deltaX)
-  }
-  if (dir.includes('w')) {
-    // 左边 - 修复计算逻辑
-    const proposedWidth = Math.max(minWidth, windowStartWidth.value - deltaX)
-    const widthDiff = windowStartWidth.value - proposedWidth
-    newWidth = proposedWidth
-    newX = windowStartX.value + widthDiff
-  }
-  if (dir.includes('s')) {
-    // 下边
-    newHeight = Math.max(minHeight, windowStartHeight.value + deltaY)
-  }
-  if (dir.includes('n')) {
-    // 上边 - 修复计算逻辑
-    const proposedHeight = Math.max(minHeight, windowStartHeight.value - deltaY)
-    const heightDiff = windowStartHeight.value - proposedHeight
-    newHeight = proposedHeight
-    newY = windowStartY.value + heightDiff
-  }
-
-  // 更新窗口大小和位置
-  if (dir.includes('w') || dir.includes('n')) {
-    // 如果调整左边或上边，需要同时更新位置
-    window.electron.ipcRenderer.invoke('widget:setBounds', props.type, newX, newY, newWidth, newHeight)
-  } else {
-    // 只调整大小
-    window.electron.ipcRenderer.invoke('widget:setSize', props.type, newWidth, newHeight)
+const checkMouseUp = (e: MouseEvent) => {
+  // buttons === 0 表示没有按键被按下
+  if (e.buttons === 0 && isResizing.value) {
+    stopResize()
   }
 }
 
 // 停止调整大小
 const stopResize = () => {
+  if (!isResizing.value) return
+
   isResizing.value = false
-  resizeDirection.value = ''
-  document.removeEventListener('mousemove', onResize)
+
+  // 通知主进程停止调整
+  window.electron.ipcRenderer.invoke('widget:stopGlobalResize')
+
   document.removeEventListener('mouseup', stopResize)
+  document.removeEventListener('mousemove', checkMouseUp)
+
+  if (mouseUpCheckInterval) {
+    clearInterval(mouseUpCheckInterval)
+    mouseUpCheckInterval = null
+  }
 }
 
 onMounted(() => {
@@ -199,8 +172,13 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', stopDrag)
-  document.removeEventListener('mousemove', onResize)
   document.removeEventListener('mouseup', stopResize)
+  document.removeEventListener('mousemove', checkMouseUp)
+  if (mouseUpCheckInterval) {
+    clearInterval(mouseUpCheckInterval)
+  }
+  // 确保停止任何进行中的调整
+  window.electron.ipcRenderer.invoke('widget:stopGlobalResize')
 })
 </script>
 

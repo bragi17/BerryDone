@@ -1,7 +1,28 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+
+interface ScheduledTask {
+  commissionId: string
+  startDate: string
+  endDate: string
+  workDays: string[]
+  hoursPerDay: Record<string, number>
+  totalHours: number
+  isLocked: boolean
+  status?: string
+}
+
+interface Commission {
+  id: string
+  projectName: string
+  priority: string
+  status: string
+}
 
 const currentDate = ref(new Date())
+const scheduledTasks = ref<ScheduledTask[]>([])
+const commissions = ref<Commission[]>([])
+const selectedDate = ref<string>(new Date().toISOString().split('T')[0]) // 默认选中今天
 
 const currentYear = computed(() => currentDate.value.getFullYear())
 const currentMonth = computed(() => currentDate.value.getMonth())
@@ -20,6 +41,33 @@ const today = new Date()
 const todayYear = today.getFullYear()
 const todayMonth = today.getMonth()
 const todayDate = today.getDate()
+
+// 加载排单数据
+const loadTasks = async () => {
+  try {
+    // 获取排单数据
+    const tasks = await window.electron.ipcRenderer.invoke('scheduler:getScheduledTasks')
+    scheduledTasks.value = tasks || []
+    console.log('[CalendarWidget] 排单总数:', scheduledTasks.value.length)
+
+    // 获取 Commission 数据
+    const comms = await window.electron.ipcRenderer.invoke('db:getVGenCommissions')
+    commissions.value = comms || []
+    console.log('[CalendarWidget] Commissions 总数:', commissions.value.length)
+  } catch (error) {
+    console.error('Failed to load tasks:', error)
+  }
+}
+
+// 获取指定日期的任务数量
+const getTaskCountForDate = (year: number, month: number, date: number): number => {
+  const targetDate = new Date(year, month, date).toISOString().split('T')[0]
+
+  // 统计该日期有排单的任务数量
+  return scheduledTasks.value.filter((task) => {
+    return task.workDays.includes(targetDate)
+  }).length
+}
 
 // 生成日历数据
 const calendarDays = computed(() => {
@@ -42,16 +90,25 @@ const calendarDays = computed(() => {
 
   const days: Array<{
     date: number
+    year: number
+    month: number
     isCurrentMonth: boolean
     isToday: boolean
+    taskCount: number
   }> = []
 
   // 添加上个月的日期
+  const prevMonth = month === 0 ? 11 : month - 1
+  const prevYear = month === 0 ? year - 1 : year
   for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+    const date = prevMonthDays - i
     days.push({
-      date: prevMonthDays - i,
+      date,
+      year: prevYear,
+      month: prevMonth,
       isCurrentMonth: false,
-      isToday: false
+      isToday: false,
+      taskCount: getTaskCountForDate(prevYear, prevMonth, date)
     })
   }
 
@@ -59,18 +116,26 @@ const calendarDays = computed(() => {
   for (let i = 1; i <= daysInMonth; i++) {
     days.push({
       date: i,
+      year,
+      month,
       isCurrentMonth: true,
-      isToday: year === todayYear && month === todayMonth && i === todayDate
+      isToday: year === todayYear && month === todayMonth && i === todayDate,
+      taskCount: getTaskCountForDate(year, month, i)
     })
   }
 
   // 添加下个月的日期，补足42个格子 (6行 x 7列)
   const remainingDays = 42 - days.length
+  const nextMonth = month === 11 ? 0 : month + 1
+  const nextYear = month === 11 ? year + 1 : year
   for (let i = 1; i <= remainingDays; i++) {
     days.push({
       date: i,
+      year: nextYear,
+      month: nextMonth,
       isCurrentMonth: false,
-      isToday: false
+      isToday: false,
+      taskCount: getTaskCountForDate(nextYear, nextMonth, i)
     })
   }
 
@@ -88,8 +153,44 @@ const nextMonth = () => {
 
 // 回到今天
 const goToToday = () => {
-  currentDate.value = new Date()
+  const today = new Date()
+  currentDate.value = today
+  const todayStr = today.toISOString().split('T')[0]
+  selectedDate.value = todayStr
+  console.log('[CalendarWidget] 回到今天:', todayStr)
+
+  // 通知待办组件更新
+  window.electron.ipcRenderer.invoke('widget:selectDate', todayStr)
 }
+
+// 选择日期
+const selectDate = (year: number, month: number, date: number) => {
+  const dateStr = new Date(year, month, date).toISOString().split('T')[0]
+  selectedDate.value = dateStr
+  console.log('[CalendarWidget] 选中日期:', dateStr)
+
+  // 通过 IPC 通知待办组件更新
+  window.electron.ipcRenderer.invoke('widget:selectDate', dateStr)
+}
+
+onMounted(() => {
+  console.log('[CalendarWidget] 组件挂载')
+  console.log('[CalendarWidget] 当前选中日期:', selectedDate.value)
+  console.log('[CalendarWidget] 当前月份:', currentYear.value, currentMonth.value + 1)
+
+  // 加载排单数据
+  loadTasks()
+
+  // 通知待办组件默认显示今天的数据
+  console.log('[CalendarWidget] 通知待办组件加载今天的数据')
+  window.electron.ipcRenderer.invoke('widget:selectDate', selectedDate.value)
+
+  // 监听任务更新事件
+  window.electron.ipcRenderer.on('tasks:updated', () => {
+    console.log('[CalendarWidget] 收到 tasks:updated 事件')
+    loadTasks()
+  })
+})
 </script>
 
 <template>
@@ -125,10 +226,14 @@ const goToToday = () => {
         class="day-cell"
         :class="{
           'other-month': !day.isCurrentMonth,
-          today: day.isToday
+          today: day.isToday,
+          selected: selectedDate === new Date(day.year, day.month, day.date).toISOString().split('T')[0],
+          'has-tasks': day.taskCount > 0
         }"
+        @click="selectDate(day.year, day.month, day.date)"
       >
-        {{ day.date }}
+        <span class="date-number">{{ day.date }}</span>
+        <span v-if="day.taskCount > 0" class="task-badge">{{ day.taskCount }}</span>
       </div>
     </div>
   </div>
@@ -227,6 +332,7 @@ const goToToday = () => {
 .day-cell {
   aspect-ratio: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   font-size: 13px;
@@ -235,6 +341,8 @@ const goToToday = () => {
   cursor: pointer;
   transition: all 0.2s;
   user-select: none;
+  position: relative;
+  padding: 2px;
 }
 
 .day-cell:hover {
@@ -253,5 +361,42 @@ const goToToday = () => {
 
 .day-cell.today:hover {
   background: #7c3aed;
+}
+
+.day-cell.selected {
+  background: rgba(59, 130, 246, 0.6);
+  color: white;
+  font-weight: 600;
+}
+
+.day-cell.selected:hover {
+  background: rgba(59, 130, 246, 0.7);
+}
+
+.date-number {
+  font-size: 13px;
+}
+
+.task-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  background: #ff6b9d;
+  color: white;
+  font-size: 9px;
+  font-weight: 600;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.day-cell.today .task-badge {
+  background: #fbbf24;
+  color: #1a1a1a;
 }
 </style>

@@ -23,6 +23,33 @@ let mainWindowRef: BrowserWindow | null = null
 // 磁性吸附管理
 const SNAP_THRESHOLD = 20 // 吸附阈值（像素）
 const BREAK_THRESHOLD = 15 // 断开吸附阈值（像素）
+
+// 调整大小状态管理（用于全局鼠标追踪）
+interface ResizeState {
+  isResizing: boolean
+  widgetType: string
+  direction: string
+  startMouseX: number
+  startMouseY: number
+  startX: number
+  startY: number
+  startWidth: number
+  startHeight: number
+  intervalId: NodeJS.Timeout | null
+}
+
+const resizeState: ResizeState = {
+  isResizing: false,
+  widgetType: '',
+  direction: '',
+  startMouseX: 0,
+  startMouseY: 0,
+  startX: 0,
+  startY: 0,
+  startWidth: 0,
+  startHeight: 0,
+  intervalId: null
+}
 interface SnappedWidget {
   type: string
   offsetX: number // 相对于父组件的 X 偏移
@@ -351,6 +378,27 @@ function broadcastStateChange() {
   if (controlPanelWindow && !controlPanelWindow.isDestroyed()) {
     controlPanelWindow.webContents.send('widget:stateChanged', getWidgetStates())
   }
+}
+
+// 广播任务更新到所有窗口
+function broadcastTasksUpdate() {
+  console.log('[Main] broadcastTasksUpdate 开始')
+  // 广播到主窗口
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    console.log('[Main] 发送 tasks:updated 到主窗口')
+    mainWindowRef.webContents.send('tasks:updated')
+  }
+  // 广播到日历窗口
+  if (calendarWindow && !calendarWindow.isDestroyed()) {
+    console.log('[Main] 发送 tasks:updated 到日历窗口')
+    calendarWindow.webContents.send('tasks:updated')
+  }
+  // 广播到待办窗口
+  if (todoWindow && !todoWindow.isDestroyed()) {
+    console.log('[Main] 发送 tasks:updated 到待办窗口')
+    todoWindow.webContents.send('tasks:updated')
+  }
+  console.log('[Main] broadcastTasksUpdate 完成')
 }
 
 function createWindow(): void {
@@ -689,6 +737,8 @@ function registerDBHandlers(): void {
     }
     db.data.tasks.push(newTask)
     await db.write()
+    // 广播任务更新
+    broadcastTasksUpdate()
     return newTask
   })
 
@@ -699,6 +749,8 @@ function registerDBHandlers(): void {
     if (index !== -1) {
       db.data.tasks[index] = { ...db.data.tasks[index], ...updates }
       await db.write()
+      // 广播任务更新
+      broadcastTasksUpdate()
     }
   })
 
@@ -707,6 +759,8 @@ function registerDBHandlers(): void {
     await db.read()
     db.data.tasks = db.data.tasks.filter(t => t.id !== id)
     await db.write()
+    // 广播任务更新
+    broadcastTasksUpdate()
   })
 
   // 项目相关
@@ -862,12 +916,18 @@ function registerDBHandlers(): void {
   })
 
   ipcMain.handle('scheduler:saveScheduledTasks', async (_event, tasks: ScheduledTask[]) => {
-    console.log('[Main] 收到保存排单请求, tasks:', tasks)
+    console.log('[Main] 收到保存排单请求, tasks 数量:', tasks.length)
+
+    // 打印前3个任务的状态信息
+    tasks.slice(0, 3).forEach((task, idx) => {
+      console.log(`[Main] Task ${idx}: commissionId=${task.commissionId}, status=${task.status}`)
+    })
+
     try {
       const db = getDB()
       await db.read()
 
-      // ✨ 确保 tasks 是纯 JSON 对象，保存所有必要字段
+      // ✨ 确保 tasks 是纯 JSON 对象，保存所有必要字段（包括 status）
       const cleanTasks = tasks.map(task => ({
         commissionId: String(task.commissionId),
         startDate: String(task.startDate),
@@ -876,6 +936,7 @@ function registerDBHandlers(): void {
         hoursPerDay: task.hoursPerDay ? JSON.parse(JSON.stringify(task.hoursPerDay)) : {},
         totalHours: Number(task.totalHours),
         isLocked: Boolean(task.isLocked),
+        status: task.status || 'NORMAL', // ✨ 确保保存 status 字段，默认为 NORMAL
         priorityScore: task.priorityScore !== undefined ? Number(task.priorityScore) : undefined,
         // ✨ 新增：保存子任务相关信息
         parentTaskId: task.parentTaskId !== undefined ? String(task.parentTaskId) : undefined,
@@ -907,6 +968,15 @@ function registerDBHandlers(): void {
 
       await db.write()
       console.log('[Main] 保存排单成功')
+
+      // 打印保存后的前3个任务状态
+      cleanTasks.slice(0, 3).forEach((task, idx) => {
+        console.log(`[Main] 保存后 Task ${idx}: commissionId=${task.commissionId}, status=${task.status}`)
+      })
+
+      // 广播排单更新
+      console.log('[Main] 广播排单更新事件...')
+      broadcastTasksUpdate()
       return true
     } catch (error: any) {
       console.error('[Main] 保存排单失败:', error)
@@ -1150,6 +1220,15 @@ function registerWidgetHandlers(): void {
     return getWidgetStates()
   })
 
+  // 选择日期（日历通知待办组件）
+  ipcMain.handle('widget:selectDate', (_event, dateStr: string) => {
+    console.log('[Main] 日历选择日期:', dateStr)
+    // 广播给待办窗口
+    if (todoWindow && !todoWindow.isDestroyed()) {
+      todoWindow.webContents.send('calendar:dateSelected', dateStr)
+    }
+  })
+
   ipcMain.handle('widget:minimize', () => {
     // 已被 widget:minimizeAll 取代
   })
@@ -1259,6 +1338,100 @@ function registerWidgetHandlers(): void {
         width: Math.round(width),
         height: Math.round(height)
       })
+    }
+  })
+
+  // 开始全局调整大小（解决鼠标移出窗口时无法继续调整的问题）
+  ipcMain.handle('widget:startGlobalResize', (_event, type: string, direction: string, mouseX: number, mouseY: number) => {
+    const window = getWidgetWindow(type)
+    if (!window || window.isDestroyed()) return false
+
+    const bounds = window.getBounds()
+
+    // 设置调整状态
+    resizeState.isResizing = true
+    resizeState.widgetType = type
+    resizeState.direction = direction
+    resizeState.startMouseX = mouseX
+    resizeState.startMouseY = mouseY
+    resizeState.startX = bounds.x
+    resizeState.startY = bounds.y
+    resizeState.startWidth = bounds.width
+    resizeState.startHeight = bounds.height
+
+    const minWidth = 150
+    const minHeight = 100
+
+    // 使用定时器持续追踪鼠标位置
+    resizeState.intervalId = setInterval(() => {
+      if (!resizeState.isResizing) {
+        if (resizeState.intervalId) {
+          clearInterval(resizeState.intervalId)
+          resizeState.intervalId = null
+        }
+        return
+      }
+
+      const targetWindow = getWidgetWindow(resizeState.widgetType)
+      if (!targetWindow || targetWindow.isDestroyed()) {
+        resizeState.isResizing = false
+        if (resizeState.intervalId) {
+          clearInterval(resizeState.intervalId)
+          resizeState.intervalId = null
+        }
+        return
+      }
+
+      // 获取全局鼠标位置
+      const cursorPoint = screen.getCursorScreenPoint()
+      const deltaX = cursorPoint.x - resizeState.startMouseX
+      const deltaY = cursorPoint.y - resizeState.startMouseY
+
+      let newX = resizeState.startX
+      let newY = resizeState.startY
+      let newWidth = resizeState.startWidth
+      let newHeight = resizeState.startHeight
+
+      const dir = resizeState.direction
+
+      // 处理不同方向的调整
+      if (dir.includes('e')) {
+        newWidth = Math.max(minWidth, resizeState.startWidth + deltaX)
+      }
+      if (dir.includes('w')) {
+        const proposedWidth = Math.max(minWidth, resizeState.startWidth - deltaX)
+        const widthDiff = resizeState.startWidth - proposedWidth
+        newWidth = proposedWidth
+        newX = resizeState.startX + widthDiff
+      }
+      if (dir.includes('s')) {
+        newHeight = Math.max(minHeight, resizeState.startHeight + deltaY)
+      }
+      if (dir.includes('n')) {
+        const proposedHeight = Math.max(minHeight, resizeState.startHeight - deltaY)
+        const heightDiff = resizeState.startHeight - proposedHeight
+        newHeight = proposedHeight
+        newY = resizeState.startY + heightDiff
+      }
+
+      // 更新窗口
+      targetWindow.setBounds({
+        x: Math.round(newX),
+        y: Math.round(newY),
+        width: Math.round(newWidth),
+        height: Math.round(newHeight)
+      })
+    }, 16) // ~60fps
+
+    return true
+  })
+
+  // 停止全局调整大小
+  ipcMain.handle('widget:stopGlobalResize', () => {
+    resizeState.isResizing = false
+    if (resizeState.intervalId) {
+      clearInterval(resizeState.intervalId)
+      resizeState.intervalId = null
     }
   })
 
