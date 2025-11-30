@@ -8,7 +8,8 @@ import {
   CalendarOutline,
   CheckboxOutline,
   AppsOutline,
-  ChatboxOutline
+  ChatboxOutline,
+  TimerOutline
 } from '@vicons/ionicons5'
 
 // 菜单显示状态
@@ -19,7 +20,8 @@ const widgetStates = ref({
   calendar: false,
   todo: false,
   apps: false,
-  'quick-replies': false
+  'quick-replies': false,
+  timer: false
 })
 
 // 拖拽相关
@@ -189,6 +191,14 @@ onUnmounted(() => {
             <span>快捷回复</span>
           </div>
           <n-switch v-model:value="widgetStates['quick-replies']" @update:value="() => toggleWidget('quick-replies')" size="small" />
+        </div>
+
+        <div class="widget-item">
+          <div class="widget-label">
+            <n-icon :component="TimerOutline" class="widget-icon" />
+            <span>计时器</span>
+          </div>
+          <n-switch v-model:value="widgetStates.timer" @update:value="() => toggleWidget('timer')" size="small" />
         </div>
       </div>
 

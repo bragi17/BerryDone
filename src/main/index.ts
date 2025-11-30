@@ -18,6 +18,7 @@ let calendarWindow: BrowserWindow | null = null
 let todoWindow: BrowserWindow | null = null
 let appsWindow: BrowserWindow | null = null
 let quickRepliesWindow: BrowserWindow | null = null
+let timerWindow: BrowserWindow | null = null
 let mainWindowRef: BrowserWindow | null = null
 
 // 磁性吸附管理
@@ -70,6 +71,8 @@ function getWidgetWindow(type: string): BrowserWindow | null {
       return appsWindow
     case 'quick-replies':
       return quickRepliesWindow
+    case 'timer':
+      return timerWindow
     default:
       return null
   }
@@ -91,6 +94,8 @@ function getWidgetSize(type: string): { width: number; height: number } {
       return { width: 100, height: 110 }
     case 'quick-replies':
       return { width: 320, height: 70 }
+    case 'timer':
+      return { width: 320, height: 100 }
     default:
       return { width: 320, height: 360 }
   }
@@ -161,7 +166,7 @@ function checkAndSnap(movedType: string) {
     height: movedBounds.height
   }
 
-  const widgetTypes = ['calendar', 'todo', 'apps', 'quick-replies'].filter((t) => t !== movedType)
+  const widgetTypes = ['calendar', 'todo', 'apps', 'quick-replies', 'timer'].filter((t) => t !== movedType)
 
   // 清除该组件之前作为子组件的吸附关系
   for (const [parentType, children] of snappedWidgets.entries()) {
@@ -401,7 +406,8 @@ function getWidgetStates() {
     calendar: calendarWindow !== null && !calendarWindow.isDestroyed() && calendarWindow.isVisible(),
     todo: todoWindow !== null && !todoWindow.isDestroyed() && todoWindow.isVisible(),
     apps: appsWindow !== null && !appsWindow.isDestroyed() && appsWindow.isVisible(),
-    'quick-replies': quickRepliesWindow !== null && !quickRepliesWindow.isDestroyed() && quickRepliesWindow.isVisible()
+    'quick-replies': quickRepliesWindow !== null && !quickRepliesWindow.isDestroyed() && quickRepliesWindow.isVisible(),
+    timer: timerWindow !== null && !timerWindow.isDestroyed() && timerWindow.isVisible()
   }
 }
 
@@ -424,7 +430,8 @@ async function saveWidgetLayout() {
     { type: 'calendar', window: calendarWindow },
     { type: 'todo', window: todoWindow },
     { type: 'apps', window: appsWindow },
-    { type: 'quick-replies', window: quickRepliesWindow }
+    { type: 'quick-replies', window: quickRepliesWindow },
+    { type: 'timer', window: timerWindow }
   ]
 
   for (const { type, window } of widgets) {
@@ -541,7 +548,7 @@ function createControlPanelWindow(): void {
 
   controlPanelWindow = new BrowserWindow({
     width: 270,
-    height: 470,
+    height: 520,
     x: width - 290,
     y: 20,
     frame: false,
@@ -777,6 +784,56 @@ function createQuickRepliesWindow(): void {
   }
 }
 
+// 创建计时器窗口
+function createTimerWindow(): void {
+  if (timerWindow && !timerWindow.isDestroyed()) {
+    timerWindow.show()
+    timerWindow.focus()
+    return
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { width, height } = primaryDisplay.workAreaSize
+
+  // 加载保存的布局
+  const savedLayout = loadWidgetLayout()
+  const timerLayout = savedLayout?.timer
+
+  timerWindow = new BrowserWindow({
+    width: timerLayout?.width || 320,
+    height: timerLayout?.height || 100,
+    minWidth: 150,
+    minHeight: 100,
+    x: timerLayout?.x || 20,
+    y: timerLayout?.y || 540,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  timerWindow.on('ready-to-show', () => {
+    timerWindow?.show()
+  })
+
+  timerWindow.on('closed', () => {
+    timerWindow = null
+    broadcastStateChange()
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    timerWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/widget.html#timer`)
+  } else {
+    timerWindow.loadFile(join(__dirname, '../renderer/widget.html'), { hash: 'timer' })
+  }
+}
+
 // 打开所有小组件窗口
 function openAllWidgets(): void {
   // 最小化主窗口
@@ -804,6 +861,9 @@ function openAllWidgets(): void {
   if (!savedLayout?.['quick-replies'] || savedLayout['quick-replies'].visible !== false) {
     createQuickRepliesWindow()
   }
+  if (!savedLayout?.timer || savedLayout.timer.visible !== false) {
+    createTimerWindow()
+  }
 }
 
 // 关闭所有小组件窗口
@@ -822,6 +882,9 @@ function closeAllWidgets(): void {
   }
   if (quickRepliesWindow && !quickRepliesWindow.isDestroyed()) {
     quickRepliesWindow.close()
+  }
+  if (timerWindow && !timerWindow.isDestroyed()) {
+    timerWindow.close()
   }
 }
 
@@ -1257,6 +1320,9 @@ function registerWidgetHandlers(): void {
     if (quickRepliesWindow && !quickRepliesWindow.isDestroyed()) {
       quickRepliesWindow.minimize()
     }
+    if (timerWindow && !timerWindow.isDestroyed()) {
+      timerWindow.minimize()
+    }
   })
 
   // 单独关闭窗口
@@ -1287,6 +1353,11 @@ function registerWidgetHandlers(): void {
           quickRepliesWindow.close()
         }
         break
+      case 'timer':
+        if (timerWindow && !timerWindow.isDestroyed()) {
+          timerWindow.close()
+        }
+        break
     }
   })
 
@@ -1311,6 +1382,10 @@ function registerWidgetHandlers(): void {
       case 'quick-replies':
         window = quickRepliesWindow
         createFunc = createQuickRepliesWindow
+        break
+      case 'timer':
+        window = timerWindow
+        createFunc = createTimerWindow
         break
     }
 
@@ -1370,6 +1445,9 @@ function registerWidgetHandlers(): void {
       case 'quick-replies':
         window = quickRepliesWindow
         break
+      case 'timer':
+        window = timerWindow
+        break
     }
     if (window && !window.isDestroyed()) {
       return window.getPosition()
@@ -1395,6 +1473,9 @@ function registerWidgetHandlers(): void {
         break
       case 'quick-replies':
         window = quickRepliesWindow
+        break
+      case 'timer':
+        window = timerWindow
         break
     }
     if (window && !window.isDestroyed()) {
@@ -1423,6 +1504,9 @@ function registerWidgetHandlers(): void {
       case 'quick-replies':
         window = quickRepliesWindow
         break
+      case 'timer':
+        window = timerWindow
+        break
     }
     if (window && !window.isDestroyed()) {
       window.setSize(Math.round(width), Math.round(height))
@@ -1447,6 +1531,9 @@ function registerWidgetHandlers(): void {
         break
       case 'quick-replies':
         window = quickRepliesWindow
+        break
+      case 'timer':
+        window = timerWindow
         break
     }
     if (window && !window.isDestroyed()) {
@@ -1576,6 +1663,9 @@ function registerWidgetHandlers(): void {
         break
       case 'quick-replies':
         window = quickRepliesWindow
+        break
+      case 'timer':
+        window = timerWindow
         break
     }
 

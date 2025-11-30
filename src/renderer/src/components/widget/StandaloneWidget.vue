@@ -4,6 +4,7 @@ import CalendarWidget from './CalendarWidget.vue'
 import TodoWidget from './TodoWidget.vue'
 import AppsWidget from './AppsWidget.vue'
 import QuickRepliesWidget from './QuickRepliesWidget.vue'
+import TimerWidget from './TimerWidget.vue'
 
 const props = defineProps<{
   type: string
@@ -33,6 +34,8 @@ const widgetComponent = computed(() => {
       return AppsWidget
     case 'quick-replies':
       return QuickRepliesWidget
+    case 'timer':
+      return TimerWidget
     default:
       return null
   }
