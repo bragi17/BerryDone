@@ -187,6 +187,34 @@ function registerDBHandlers(): void {
     return true
   })
 
+  // Refunds 相关
+  ipcMain.handle('db:getRefunds', async () => {
+    const db = getDB()
+    await db.read()
+    return db.data.refunds || []
+  })
+
+  ipcMain.handle('db:addRefund', async (_event, refund: any) => {
+    const db = getDB()
+    await db.read()
+    if (!db.data.refunds) {
+      db.data.refunds = []
+    }
+    db.data.refunds.push(refund)
+    await db.write()
+    return true
+  })
+
+  ipcMain.handle('db:deleteRefund', async (_event, id: string) => {
+    const db = getDB()
+    await db.read()
+    if (db.data.refunds) {
+      db.data.refunds = db.data.refunds.filter(r => r.id !== id)
+      await db.write()
+    }
+    return true
+  })
+
   // Scheduler 相关
   ipcMain.handle('scheduler:getState', async () => {
     const db = getDB()

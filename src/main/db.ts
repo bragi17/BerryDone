@@ -59,6 +59,16 @@ export interface VGenCommission {
   _raw?: any
 }
 
+// 退款/赔付记录
+export interface Refund {
+  id: string
+  date: string // YYYY-MM-DD
+  amount: number
+  reason: string
+  commissionId?: string // 可选：关联的订单ID
+  notes?: string
+}
+
 export interface Database {
   tasks: Task[]
   projects: Project[]
@@ -67,6 +77,7 @@ export interface Database {
   schedulerState?: SchedulerState // 智能排单状态
   workHoursConfig?: WorkHoursConfig // 工时配置
   priorityConfig?: PriorityConfig // 优先级配置
+  refunds?: Refund[] // 退款记录
 }
 
 // 工时配置
@@ -136,6 +147,12 @@ export async function initDB(): Promise<Low<Database>> {
   // 确保 priorityConfig 存在
   if (!db.data.priorityConfig) {
     db.data.priorityConfig = DEFAULT_PRIORITY_CONFIG
+    await db.write()
+  }
+
+  // 确保 refunds 存在
+  if (!db.data.refunds) {
+    db.data.refunds = []
     await db.write()
   }
 

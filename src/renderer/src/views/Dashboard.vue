@@ -3,6 +3,12 @@
     <div class="dashboard-header">
       <h1 class="page-title">📊 Dashboard</h1>
       <div class="header-actions">
+        <n-button quaternary @click="showRefundModal = true">
+          <template #icon>
+            <n-icon :component="RemoveCircleOutline" />
+          </template>
+          记录退款
+        </n-button>
         <n-button quaternary>
           <template #icon>
             <n-icon :component="DownloadOutline" />
@@ -18,7 +24,20 @@
           <n-icon :component="WalletOutline" size="24" />
         </div>
         <div class="stat-content">
-          <div class="stat-label">本月收入</div>
+          <div class="stat-header">
+            <div class="stat-label">本月收入</div>
+            <n-switch
+              v-model:value="includeNonCompletedPaid"
+              size="small"
+            >
+              <template #checked>
+                全部已付
+              </template>
+              <template #unchecked>
+                仅完成
+              </template>
+            </n-switch>
+          </div>
           <div class="stat-value">${{ monthlyRevenue.toFixed(2) }}</div>
           <div class="stat-change positive">+{{ monthlyGrowth }}% vs 上月</div>
         </div>
@@ -69,18 +88,43 @@
           />
         </div>
         <div class="chart-placeholder">
-          <div class="revenue-bars">
-            <div 
-              v-for="month in monthlyData" 
+          <div class="revenue-bars-container">
+            <div
+              v-for="month in monthlyData"
               :key="month.month"
-              class="revenue-bar"
+              class="revenue-bar-wrapper"
             >
-              <div 
-                class="bar-fill" 
-                :style="{ height: (month.revenue / maxRevenue * 100) + '%' }"
-              ></div>
-              <div class="bar-label">{{ month.month }}</div>
-              <div class="bar-value">${{ month.revenue.toFixed(0) }}</div>
+              <!-- 收入区域（上半部分） -->
+              <div class="revenue-section">
+                <div class="bar-value revenue-value">${{ month.revenue.toFixed(0) }}</div>
+                <div
+                  class="bar-fill bar-revenue"
+                  :style="{ height: (month.revenue / maxRevenue * 85) + '%' }"
+                >
+                  <div class="bar-shine"></div>
+                </div>
+              </div>
+
+              <!-- 中间标签区域 -->
+              <div class="bar-center">
+                <div class="bar-label">{{ month.month }}</div>
+                <div class="bar-net-income" :class="{ 'negative': month.netIncome < 0 }">
+                  ${{ Math.abs(month.netIncome).toFixed(0) }}
+                </div>
+              </div>
+
+              <!-- 退款区域（下半部分） -->
+              <div class="refund-section">
+                <div
+                  class="bar-fill bar-refund"
+                  :style="{ height: (month.refund / maxRevenue * 85) + '%' }"
+                >
+                  <div class="bar-shine"></div>
+                </div>
+                <div class="bar-value refund-value" v-if="month.refund > 0">
+                  -${{ month.refund.toFixed(0) }}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -138,18 +182,66 @@
         </div>
       </div>
     </div>
+
+    <!-- 退款录入对话框 -->
+    <n-modal v-model:show="showRefundModal" preset="card" title="记录退款" style="width: 500px;">
+      <n-form ref="refundFormRef" :model="refundForm" :rules="refundFormRules">
+        <n-form-item label="日期" path="date">
+          <n-date-picker
+            v-model:value="refundForm.dateTimestamp"
+            type="date"
+            clearable
+            style="width: 100%;"
+          />
+        </n-form-item>
+        <n-form-item label="金额 (USD)" path="amount">
+          <n-input-number
+            v-model:value="refundForm.amount"
+            :min="0"
+            :step="0.01"
+            placeholder="请输入退款金额"
+            style="width: 100%;"
+          >
+            <template #prefix>$</template>
+          </n-input-number>
+        </n-form-item>
+        <n-form-item label="退款原因" path="reason">
+          <n-input
+            v-model:value="refundForm.reason"
+            placeholder="请输入退款原因"
+            type="textarea"
+            :rows="3"
+          />
+        </n-form-item>
+        <n-form-item label="备注" path="notes">
+          <n-input
+            v-model:value="refundForm.notes"
+            placeholder="可选：补充说明"
+            type="textarea"
+            :rows="2"
+          />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end; gap: 12px;">
+          <n-button @click="showRefundModal = false">取消</n-button>
+          <n-button type="primary" @click="handleAddRefund">确定</n-button>
+        </div>
+      </template>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { NButton, NIcon, NSelect } from 'naive-ui'
+import { NButton, NIcon, NSelect, NSwitch, NModal, NForm, NFormItem, NInput, NInputNumber, NDatePicker, useMessage } from 'naive-ui'
 import {
   DownloadOutline,
   WalletOutline,
   CheckmarkCircleOutline,
   TimeOutline,
-  TrendingUpOutline
+  TrendingUpOutline,
+  RemoveCircleOutline
 } from '@vicons/ionicons5'
 
 interface VGenCommission {
@@ -163,8 +255,34 @@ interface VGenCommission {
   startDate: string
 }
 
+interface Refund {
+  id: string
+  date: string
+  amount: number
+  reason: string
+  commissionId?: string
+  notes?: string
+}
+
+const message = useMessage()
 const vgenCommissions = ref<VGenCommission[]>([])
+const refunds = ref<Refund[]>([])
 const selectedYear = ref(new Date().getFullYear()) // 自动设置为当前年份
+const includeNonCompletedPaid = ref(true) // 默认包含所有已付费订单
+
+// 退款表单
+const showRefundModal = ref(false)
+const refundFormRef = ref()
+const refundForm = ref({
+  dateTimestamp: Date.now(),
+  amount: 0,
+  reason: '',
+  notes: ''
+})
+const refundFormRules = {
+  amount: { required: true, message: '请输入退款金额', trigger: 'blur', type: 'number' },
+  reason: { required: true, message: '请输入退款原因', trigger: 'blur' }
+}
 
 // 动态生成年份选项（当前年份及前后各一年）
 const yearOptions = computed(() => {
@@ -180,14 +298,65 @@ onMounted(async () => {
   try {
     const commissions = await window.api.db.getVGenCommissions()
     vgenCommissions.value = commissions
-    console.log(`Dashboard loaded ${commissions.length} commissions for year ${selectedYear.value}`)
+
+    const refundsData = await window.api.db.getRefunds()
+    refunds.value = refundsData
+
+    console.log(`Dashboard loaded ${commissions.length} commissions and ${refundsData.length} refunds for year ${selectedYear.value}`)
   } catch (error) {
-    console.error('Failed to load commissions:', error)
+    console.error('Failed to load data:', error)
   }
 })
 
+// 添加退款
+const handleAddRefund = async () => {
+  try {
+    await refundFormRef.value?.validate()
+
+    // 转换时间戳为日期字符串
+    const date = new Date(refundForm.value.dateTimestamp)
+    const dateStr = date.toISOString().split('T')[0]
+
+    const newRefund: Refund = {
+      id: `refund-${Date.now()}`,
+      date: dateStr,
+      amount: refundForm.value.amount,
+      reason: refundForm.value.reason,
+      notes: refundForm.value.notes || undefined
+    }
+
+    await window.api.db.addRefund(newRefund)
+    refunds.value.push(newRefund)
+
+    message.success('退款记录已添加')
+    showRefundModal.value = false
+
+    // 重置表单
+    refundForm.value = {
+      dateTimestamp: Date.now(),
+      amount: 0,
+      reason: '',
+      notes: ''
+    }
+  } catch (error) {
+    message.error('添加退款失败')
+    console.error(error)
+  }
+}
+
 // 统计数据
-const completedCommissions = computed(() => 
+// 根据开关状态决定收入计算范围
+const paidCommissions = computed(() => {
+  if (includeNonCompletedPaid.value) {
+    // 包含所有已付费订单（不论状态）
+    return vgenCommissions.value.filter(c => c.paymentStatus === 'PAID')
+  } else {
+    // 仅包含已完成的订单
+    return vgenCommissions.value.filter(c => c.status === 'COMPLETED')
+  }
+})
+
+const completedCommissions = computed(() =>
   vgenCommissions.value.filter(c => c.status === 'COMPLETED')
 )
 
@@ -199,16 +368,16 @@ const inProgressCount = computed(() =>
 
 const totalCommissions = computed(() => vgenCommissions.value.length)
 
-// 本月收入
+// 本月收入（根据开关使用不同数据源）
 const monthlyRevenue = computed(() => {
   const now = new Date()
   const currentMonth = now.getMonth()
   const currentYear = now.getFullYear()
-  
-  return completedCommissions.value
+
+  return paidCommissions.value
     .filter(c => {
-      if (!c.completedDate) return false
-      const date = new Date(c.completedDate)
+      // 使用 completedDate 或 startDate（针对未完成但已付费的订单）
+      const date = c.completedDate ? new Date(c.completedDate) : new Date(c.startDate)
       return date.getMonth() === currentMonth && date.getFullYear() === currentYear
     })
     .reduce((sum, c) => sum + c.totalCost, 0)
@@ -220,34 +389,51 @@ const monthlyGrowth = computed(() => {
   return 15.6
 })
 
-// 平均单价
+// 平均单价（根据开关使用不同数据源）
 const averagePrice = computed(() => {
-  if (completedCommissions.value.length === 0) return 0
-  const total = completedCommissions.value.reduce((sum, c) => sum + c.totalCost, 0)
-  return total / completedCommissions.value.length
+  if (paidCommissions.value.length === 0) return 0
+  const total = paidCommissions.value.reduce((sum, c) => sum + c.totalCost, 0)
+  return total / paidCommissions.value.length
 })
 
-// 月度数据
+// 月度数据（根据开关使用不同数据源，包含退款）
 const monthlyData = computed(() => {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   const data = months.map((month, index) => {
-    const revenue = completedCommissions.value
+    const revenue = paidCommissions.value
       .filter(c => {
-        if (!c.completedDate) return false
-        const date = new Date(c.completedDate)
+        // 使用 completedDate 或 startDate
+        const date = c.completedDate ? new Date(c.completedDate) : new Date(c.startDate)
         return date.getMonth() === index && date.getFullYear() === selectedYear.value
       })
       .reduce((sum, c) => sum + c.totalCost, 0)
-    
-    return { month, revenue }
+
+    // 计算当月退款
+    const refundAmount = refunds.value
+      .filter(r => {
+        const date = new Date(r.date)
+        return date.getMonth() === index && date.getFullYear() === selectedYear.value
+      })
+      .reduce((sum, r) => sum + r.amount, 0)
+
+    return {
+      month,
+      revenue,
+      refund: refundAmount,
+      netIncome: revenue - refundAmount
+    }
   })
-  
+
   return data
 })
 
-const maxRevenue = computed(() => 
-  Math.max(...monthlyData.value.map(d => d.revenue), 1)
-)
+const maxRevenue = computed(() => {
+  // 找出所有月份中收入和退款的最大值
+  const maxRevenueValue = Math.max(...monthlyData.value.map(d => d.revenue))
+  const maxRefundValue = Math.max(...monthlyData.value.map(d => d.refund))
+  const overallMax = Math.max(maxRevenueValue, maxRefundValue)
+  return Math.max(overallMax, 1) // 至少为1，避免除以0
+})
 
 // 状态分布
 const statusDistribution = computed(() => {
@@ -352,10 +538,16 @@ const formatDate = (dateStr?: string) => {
   flex: 1;
 }
 
+.stat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
 .stat-label {
   font-size: 14px;
   color: #888;
-  margin-bottom: 8px;
 }
 
 .stat-value {
@@ -400,20 +592,38 @@ const formatDate = (dateStr?: string) => {
 }
 
 .chart-placeholder {
-  height: 300px;
+  height: 340px;
+  overflow: hidden;
 }
 
-.revenue-bars {
+.revenue-bars-container {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  height: 250px;
-  gap: 8px;
+  height: 100%;
+  gap: 4px;
+  padding: 8px 0;
 }
 
-.revenue-bar {
+.revenue-bar-wrapper {
   flex: 1;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  transition: transform 0.2s;
+}
+
+.revenue-bar-wrapper:hover {
+  transform: scale(1.05);
+  z-index: 10;
+}
+
+/* 收入区域（上半部分） */
+.revenue-section {
+  flex: 1;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -421,25 +631,134 @@ const formatDate = (dateStr?: string) => {
   position: relative;
 }
 
+/* 退款区域（下半部分） */
+.refund-section {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  position: relative;
+}
+
+/* 柱子基础样式 */
 .bar-fill {
   width: 100%;
-  background: linear-gradient(to top, #54C5B7, #8FD5CC);
-  border-radius: 4px 4px 0 0;
+  max-width: 32px;
+  border-radius: 5px;
   min-height: 4px;
-  transition: height 0.3s;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.bar-label {
-  font-size: 12px;
-  color: #888;
-  margin-top: 8px;
+.revenue-bar-wrapper:hover .bar-fill {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
-.bar-value {
+/* 收入柱子（向上，绿色渐变） */
+.bar-revenue {
+  background: linear-gradient(to top, #10B981, #34D399, #6EE7B7);
+  border-radius: 5px 5px 2px 2px;
+}
+
+.revenue-bar-wrapper:hover .bar-revenue {
+  background: linear-gradient(to top, #059669, #10B981, #34D399);
+}
+
+/* 退款柱子（向下，红色渐变） */
+.bar-refund {
+  background: linear-gradient(to bottom, #EF4444, #DC2626, #B91C1C);
+  border-radius: 2px 2px 5px 5px;
+}
+
+.revenue-bar-wrapper:hover .bar-refund {
+  background: linear-gradient(to bottom, #DC2626, #B91C1C, #991B1B);
+}
+
+/* 柱子内部光泽效果 */
+.bar-shine {
   position: absolute;
-  top: -20px;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.25), transparent);
+  border-radius: 5px 5px 0 0;
+  pointer-events: none;
+}
+
+.bar-refund .bar-shine {
+  top: auto;
+  bottom: 0;
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.15), transparent);
+  border-radius: 0 0 5px 5px;
+}
+
+/* 中间标签区域 */
+.bar-center {
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: rgba(139, 92, 246, 0.05);
+  border-radius: 6px;
+  min-width: 45px;
+  transition: background 0.2s;
+}
+
+.revenue-bar-wrapper:hover .bar-center {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+/* 月份标签 */
+.bar-label {
   font-size: 11px;
-  color: #aaa;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* 净收入显示 */
+.bar-net-income {
+  font-size: 13px;
+  font-weight: 700;
+  color: #10B981;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.bar-net-income.negative {
+  color: #EF4444;
+}
+
+/* 数值标签（收入/退款金额） */
+.bar-value {
+  font-size: 10px;
+  font-weight: 600;
+  margin: 3px 0;
+  transition: all 0.2s;
+  min-height: 14px;
+}
+
+.revenue-value {
+  color: #10B981;
+  text-shadow: 0 1px 2px rgba(16, 185, 129, 0.3);
+  margin-bottom: 2px;
+}
+
+.refund-value {
+  color: #EF4444;
+  text-shadow: 0 1px 2px rgba(239, 68, 68, 0.3);
+  margin-top: 2px;
+}
+
+.revenue-bar-wrapper:hover .bar-value {
+  transform: scale(1.1);
+  font-weight: 700;
 }
 
 .status-distribution {
