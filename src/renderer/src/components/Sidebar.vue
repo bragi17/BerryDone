@@ -38,6 +38,10 @@
         <n-icon :component="BriefcaseOutline" />
         <span>Commissions</span>
       </div>
+      <div class="menu-item widget-button" @click="toggleWidget">
+        <n-icon :component="GridOutline" />
+        <span>Desktop Widgets</span>
+      </div>
     </div>
 
     <!-- 移除项目选择器 - 直接显示所有 commissions -->
@@ -67,11 +71,17 @@ import {
   CalendarOutline,
   TimeOutline,
   StatsChartOutline,
-  BriefcaseOutline
+  BriefcaseOutline,
+  GridOutline
 } from '@vicons/ionicons5'
 
 const router = useRouter()
 const route = useRoute()
+
+const toggleWidget = () => {
+  // 通过 IPC 通知主进程打开/关闭桌面小组件窗口
+  window.electron.ipcRenderer.invoke('widget:toggle')
+}
 
 const navigateTo = (path: string) => {
   router.push(path)
@@ -179,6 +189,17 @@ const workspaceOptions = [
 }
 
 .menu-item.active {
+  background: #8B5CF6;
+  color: white;
+}
+
+.menu-item.widget-button {
+  margin-top: 8px;
+  border-top: 1px solid #2a2a2a;
+  padding-top: 12px;
+}
+
+.menu-item.widget-button:hover {
   background: #8B5CF6;
   color: white;
 }
