@@ -228,27 +228,59 @@ function checkAndSnap(movedType: string) {
     }
   }
 
-  // 如果有多个吸附目标，选择距离最近的一个
+  // 横向和纵向分开处理，实现直角吸附
   if (snapTargets.length > 0) {
-    // 按距离排序
-    snapTargets.sort((a, b) => a.distance - b.distance)
+    // 按方向分组：横向（left/right）和纵向（bottom）
+    const horizontalTargets = snapTargets.filter(
+      (t) => t.snapResult.direction === 'left' || t.snapResult.direction === 'right'
+    )
+    const verticalTargets = snapTargets.filter((t) => t.snapResult.direction === 'bottom')
 
-    // 选择最近的目标
-    const closestTarget = snapTargets[0]
+    let finalX = movedBounds.x
+    let finalY = movedBounds.y
 
-    // 建立吸附关系
-    if (!snappedWidgets.has(closestTarget.otherType)) {
-      snappedWidgets.set(closestTarget.otherType, [])
+    // 横向吸附：选择最近的
+    if (horizontalTargets.length > 0) {
+      horizontalTargets.sort((a, b) => a.distance - b.distance)
+      const closestH = horizontalTargets[0]
+
+      // 建立横向吸附关系
+      if (!snappedWidgets.has(closestH.otherType)) {
+        snappedWidgets.set(closestH.otherType, [])
+      }
+      const childrenH = snappedWidgets.get(closestH.otherType)!
+      childrenH.push({
+        type: movedType,
+        offsetX: closestH.snapResult.offsetX,
+        offsetY: closestH.snapResult.offsetY
+      })
+
+      finalX = closestH.snapX
     }
-    const children = snappedWidgets.get(closestTarget.otherType)!
-    children.push({
-      type: movedType,
-      offsetX: closestTarget.snapResult.offsetX,
-      offsetY: closestTarget.snapResult.offsetY
-    })
 
-    // 调整位置使其精确吸附
-    movedWindow.setPosition(closestTarget.snapX, closestTarget.snapY)
+    // 纵向吸附：选择最近的
+    if (verticalTargets.length > 0) {
+      verticalTargets.sort((a, b) => a.distance - b.distance)
+      const closestV = verticalTargets[0]
+
+      // 建立纵向吸附关系（可能与横向吸附到不同的父组件）
+      if (!snappedWidgets.has(closestV.otherType)) {
+        snappedWidgets.set(closestV.otherType, [])
+      }
+      const childrenV = snappedWidgets.get(closestV.otherType)!
+      childrenV.push({
+        type: movedType,
+        offsetX: closestV.snapResult.offsetX,
+        offsetY: closestV.snapResult.offsetY
+      })
+
+      finalY = closestV.snapY
+    }
+
+    // 如果有任何吸附，调整位置
+    if (horizontalTargets.length > 0 || verticalTargets.length > 0) {
+      movedWindow.setPosition(finalX, finalY)
+    }
   }
 }
 
@@ -1617,10 +1649,21 @@ function registerWidgetHandlers(): void {
     const fileName = filePath.split(/[\\/]/).pop() || 'Unknown'
     const appName = fileName.replace(/\.(exe|lnk|app)$/i, '')
 
+    // 提取应用程序图标
+    let iconDataUrl: string | null = null
+    try {
+      const nativeImage = await app.getFileIcon(filePath, { size: 'normal' })
+      if (!nativeImage.isEmpty()) {
+        iconDataUrl = nativeImage.toDataURL()
+      }
+    } catch (error) {
+      console.error('Failed to extract icon:', error)
+    }
+
     return {
       name: appName,
       path: filePath,
-      icon: null // 可以后续添加图标提取功能
+      icon: iconDataUrl
     }
   })
 

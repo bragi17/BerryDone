@@ -34,7 +34,7 @@ const addApp = async () => {
   try {
     const result = await window.electron.ipcRenderer.invoke('widget:selectApp')
     if (result && result.path) {
-      apps.value.push({
+      apps.value.unshift({
         name: result.name,
         path: result.path,
         icon: result.icon
@@ -74,16 +74,6 @@ onMounted(() => {
 <template>
   <div class="apps-widget">
     <div class="apps-grid">
-      <!-- 添加应用按钮 -->
-      <div class="app-item add-item" @click="addApp">
-        <div class="app-icon-wrapper">
-          <div class="add-icon-placeholder">
-            <n-icon :component="AddCircleOutline" :size="32" />
-          </div>
-        </div>
-        <div class="app-name">添加应用</div>
-      </div>
-
       <!-- 应用列表 -->
       <div v-for="(app, index) in apps" :key="index" class="app-item">
         <div class="app-icon-wrapper" @click="launchApp(app)">
@@ -96,6 +86,16 @@ onMounted(() => {
         <button class="remove-btn" @click="removeApp(index)">
           <n-icon :component="CloseCircleOutline" />
         </button>
+      </div>
+
+      <!-- 添加应用按钮 -->
+      <div class="app-item add-item" @click="addApp">
+        <div class="app-icon-wrapper">
+          <div class="add-icon-placeholder">
+            <n-icon :component="AddCircleOutline" :size="32" />
+          </div>
+        </div>
+        <div class="app-name">添加应用</div>
       </div>
     </div>
   </div>
@@ -113,6 +113,7 @@ onMounted(() => {
   grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
   gap: 12px;
   overflow-y: auto;
+  padding-top: 20px;
 }
 
 .app-item {

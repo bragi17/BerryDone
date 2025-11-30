@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { NButton, NIcon, NInput, useMessage } from 'naive-ui'
-import { AddCircleOutline, CloseCircleOutline, CopyOutline } from '@vicons/ionicons5'
+import { AddCircleOutline, CloseCircleOutline, CopyOutline, CreateOutline } from '@vicons/ionicons5'
 
 interface QuickReply {
   id: string
@@ -12,6 +12,8 @@ const message = useMessage()
 const replies = ref<QuickReply[]>([])
 const newReplyText = ref('')
 const isAdding = ref(false)
+const editingId = ref<string | null>(null)
+const editText = ref('')
 
 // 加载快捷回复
 const loadReplies = () => {
@@ -38,7 +40,7 @@ const addReply = () => {
     return
   }
 
-  replies.value.push({
+  replies.value.unshift({
     id: Date.now().toString(),
     text: newReplyText.value.trim()
   })
@@ -73,6 +75,36 @@ const cancelAdd = () => {
   newReplyText.value = ''
 }
 
+// 开始编辑
+const startEdit = (reply: QuickReply) => {
+  editingId.value = reply.id
+  editText.value = reply.text
+}
+
+// 保存编辑
+const saveEdit = (id: string) => {
+  if (!editText.value.trim()) {
+    message.warning('请输入回复内容')
+    return
+  }
+
+  const reply = replies.value.find(r => r.id === id)
+  if (reply) {
+    reply.text = editText.value.trim()
+    saveReplies()
+    message.success('修改成功')
+  }
+
+  editingId.value = null
+  editText.value = ''
+}
+
+// 取消编辑
+const cancelEdit = () => {
+  editingId.value = null
+  editText.value = ''
+}
+
 onMounted(() => {
   loadReplies()
 })
@@ -96,22 +128,44 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 添加按钮（作为列表项） -->
-    <div v-if="!isAdding" class="add-item" @click="isAdding = true">
-      <n-icon :component="AddCircleOutline" :size="20" class="add-icon" />
-      <span>添加快捷回复</span>
-    </div>
-
     <!-- 回复列表 -->
     <div v-if="!isAdding" class="replies-list">
       <div v-for="reply in replies" :key="reply.id" class="reply-item">
-        <div class="reply-text" @click="copyToClipboard(reply.text)">
-          <n-icon :component="CopyOutline" class="copy-icon" />
-          <span>{{ reply.text }}</span>
+        <!-- 编辑模式 -->
+        <div v-if="editingId === reply.id" class="edit-form">
+          <n-input
+            v-model:value="editText"
+            type="textarea"
+            placeholder="修改回复内容..."
+            :rows="2"
+            size="small"
+            @keyup.enter.ctrl="saveEdit(reply.id)"
+          />
+          <div class="form-actions">
+            <n-button size="tiny" @click="cancelEdit">取消</n-button>
+            <n-button size="tiny" type="primary" @click="saveEdit(reply.id)">保存</n-button>
+          </div>
         </div>
-        <button class="remove-btn" @click="removeReply(reply.id)">
-          <n-icon :component="CloseCircleOutline" />
-        </button>
+
+        <!-- 显示模式 -->
+        <template v-else>
+          <div class="reply-text" @click="copyToClipboard(reply.text)">
+            <n-icon :component="CopyOutline" class="copy-icon" />
+            <span>{{ reply.text }}</span>
+          </div>
+          <button class="edit-btn" @click="startEdit(reply)">
+            <n-icon :component="CreateOutline" />
+          </button>
+          <button class="remove-btn" @click="removeReply(reply.id)">
+            <n-icon :component="CloseCircleOutline" />
+          </button>
+        </template>
+      </div>
+
+      <!-- 添加按钮（移动到列表内部） -->
+      <div class="add-item" @click="isAdding = true">
+        <n-icon :component="AddCircleOutline" :size="20" class="add-icon" />
+        <span>添加快捷回复</span>
       </div>
     </div>
   </div>
@@ -153,6 +207,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex-shrink: 0;
+  min-height: 100px;
 }
 
 .form-actions {
@@ -162,10 +218,18 @@ onMounted(() => {
 }
 
 .replies-list {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
+  padding-top: 16px;
+  min-height: 0;
+  padding-bottom: 8px;
+}
+
+.add-item {
+  flex-shrink: 0;
 }
 
 .reply-item {
@@ -230,6 +294,40 @@ onMounted(() => {
 .remove-btn:hover {
   background: #f44336;
   transform: scale(1.1);
+}
+
+.edit-btn {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: rgba(76, 175, 80, 0.9);
+  color: white;
+  border-radius: 50%;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 14px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.reply-item:hover .edit-btn {
+  display: flex;
+}
+
+.edit-btn:hover {
+  background: #4caf50;
+  transform: scale(1.1);
+}
+
+.edit-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .replies-list::-webkit-scrollbar {
