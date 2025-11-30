@@ -295,6 +295,7 @@ import {
   InformationCircleOutline,
   ListOutline
 } from '@vicons/ionicons5'
+import { parseDateString, formatDateString } from '../utils/dateUtils'
 
 interface VGenCommission {
   id: string
@@ -416,7 +417,7 @@ const initializeDefaultRestDays = async () => {
   const today = new Date()
   const restDaysList: string[] = []
 
-  console.log('[Home] 开始初始化休息日，当前日期:', today.toISOString().split('T')[0])
+  console.log('[Home] 开始初始化休息日，当前日期:', formatDateString(today))
 
   // 当前月份和未来2个月的周末
   for (let monthOffset = 0; monthOffset < 3; monthOffset++) {
@@ -430,7 +431,7 @@ const initializeDefaultRestDays = async () => {
 
       // 周六(6)和周日(0)
       if (dayOfWeek === 0 || dayOfWeek === 6) {
-        const dateStr = date.toISOString().split('T')[0]
+        const dateStr = formatDateString(date)
         restDaysList.push(dateStr)
       }
     }
@@ -646,7 +647,7 @@ const calendarDays = computed(() => {
 })
 
 const createDayObject = (date: Date, dayNumber: number, isOtherMonth: boolean) => {
-  const dateStr = date.toISOString().split('T')[0]
+  const dateStr = formatDateString(date)
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   date.setHours(0, 0, 0, 0)
@@ -664,10 +665,10 @@ const createDayObject = (date: Date, dayNumber: number, isOtherMonth: boolean) =
 
   // 获取这一天的 commissions
   const dayCommissions = vgenCommissions.value.filter(comm => {
-    const start = new Date(comm.startDate)
+    const start = parseDateString(comm.startDate)
     start.setHours(0, 0, 0, 0)
 
-    let end = new Date(comm.completedDate || comm.dueDate || comm.startDate)
+    let end = parseDateString(comm.completedDate || comm.dueDate || comm.startDate)
     end.setHours(0, 0, 0, 0)
 
     return date >= start && date <= end
@@ -680,7 +681,7 @@ const createDayObject = (date: Date, dayNumber: number, isOtherMonth: boolean) =
     completed: dayCommissions.filter(c => {
       if (c.status !== 'COMPLETED') return false
       if (!c.completedDate) return false
-      const completedDate = new Date(c.completedDate)
+      const completedDate = parseDateString(c.completedDate)
       completedDate.setHours(0, 0, 0, 0)
       return completedDate.getTime() === date.getTime()
     }).length,
@@ -706,9 +707,9 @@ const monthStats = computed(() => {
   const month = currentDate.value.getMonth()
 
   const monthCommissions = vgenCommissions.value.filter(comm => {
-    const start = new Date(comm.startDate)
-    const completedDate = comm.completedDate ? new Date(comm.completedDate) : null
-    
+    const start = parseDateString(comm.startDate)
+    const completedDate = comm.completedDate ? parseDateString(comm.completedDate) : null
+
     return (start.getFullYear() === year && start.getMonth() === month) ||
            (completedDate && completedDate.getFullYear() === year && completedDate.getMonth() === month)
   })

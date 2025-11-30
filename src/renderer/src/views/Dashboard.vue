@@ -163,8 +163,8 @@
     <div class="recent-activity">
       <h3>最近完成</h3>
       <div class="activity-list">
-        <div 
-          v-for="commission in recentCompleted" 
+        <div
+          v-for="commission in recentCompleted"
           :key="commission.id"
           class="activity-item"
         >
@@ -183,9 +183,106 @@
       </div>
     </div>
 
-    <!-- 退款录入对话框 -->
-    <n-modal v-model:show="showRefundModal" preset="card" title="记录退款" style="width: 500px;">
+    <!-- 退款记录 -->
+    <div class="refunds-section">
+      <div class="section-header">
+        <h3>退款记录</h3>
+        <n-button quaternary size="small" @click="openAddRefundModal">
+          <template #icon>
+            <n-icon :component="AddOutline" />
+          </template>
+          添加退款
+        </n-button>
+      </div>
+
+      <div v-if="refunds.length === 0" class="empty-state">
+        <n-icon :component="InformationCircleOutline" size="48" color="#666" />
+        <p>暂无退款记录</p>
+      </div>
+
+      <div v-else class="refunds-list">
+        <div
+          v-for="refund in sortedRefunds"
+          :key="refund.id"
+          class="refund-item"
+        >
+          <div class="refund-main">
+            <div class="refund-date">
+              <n-icon :component="CalendarOutline" size="16" />
+              <span>{{ refund.date }}</span>
+            </div>
+            <div class="refund-amount">-${{ refund.amount.toFixed(2) }}</div>
+          </div>
+
+          <div class="refund-details">
+            <div class="refund-reason">
+              <span class="label">原因:</span>
+              <span class="value">{{ refund.reason }}</span>
+            </div>
+
+            <div v-if="refund.commissionId" class="refund-commission">
+              <span class="label">关联订单:</span>
+              <span class="value">{{ getCommissionLabel(refund.commissionId) }}</span>
+            </div>
+
+            <div v-if="refund.notes" class="refund-notes">
+              <span class="label">备注:</span>
+              <span class="value">{{ refund.notes }}</span>
+            </div>
+          </div>
+
+          <div class="refund-actions">
+            <n-button quaternary size="small" @click="handleEditRefund(refund)">
+              <template #icon>
+                <n-icon :component="CreateOutline" />
+              </template>
+              编辑
+            </n-button>
+            <n-button quaternary size="small" type="error" @click="handleDeleteRefund(refund)">
+              <template #icon>
+                <n-icon :component="TrashOutline" />
+              </template>
+              删除
+            </n-button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 退款录入/编辑对话框 -->
+    <n-modal v-model:show="showRefundModal" preset="card" :title="isEditMode ? '编辑退款' : '记录退款'" style="width: 600px;">
       <n-form ref="refundFormRef" :model="refundForm" :rules="refundFormRules">
+        <n-form-item label="关联订单" path="commissionId">
+          <n-auto-complete
+            v-model:value="refundForm.searchQuery"
+            :options="commissionSearchOptions"
+            placeholder="搜索客户名/服务名/日期"
+            clearable
+            @select="handleSelectCommission"
+            style="width: 100%;"
+          />
+        </n-form-item>
+
+        <!-- 显示选中的订单信息 -->
+        <div v-if="selectedCommission" class="selected-commission-info">
+          <div class="info-row">
+            <span class="info-label">客户:</span>
+            <span class="info-value">{{ selectedCommission.clientName }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">服务:</span>
+            <span class="info-value">{{ selectedCommission.serviceName }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">金额:</span>
+            <span class="info-value price">${{ selectedCommission.totalCost.toFixed(2) }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">日期:</span>
+            <span class="info-value">{{ selectedCommission.startDate }}</span>
+          </div>
+        </div>
+
         <n-form-item label="日期" path="date">
           <n-date-picker
             v-model:value="refundForm.dateTimestamp"
@@ -224,8 +321,8 @@
       </n-form>
       <template #footer>
         <div style="display: flex; justify-content: flex-end; gap: 12px;">
-          <n-button @click="showRefundModal = false">取消</n-button>
-          <n-button type="primary" @click="handleAddRefund">确定</n-button>
+          <n-button @click="handleCancelRefund">取消</n-button>
+          <n-button type="primary" @click="handleSaveRefund">{{ isEditMode ? '保存' : '确定' }}</n-button>
         </div>
       </template>
     </n-modal>
@@ -234,15 +331,21 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { NButton, NIcon, NSelect, NSwitch, NModal, NForm, NFormItem, NInput, NInputNumber, NDatePicker, useMessage } from 'naive-ui'
+import { NButton, NIcon, NSelect, NSwitch, NModal, NForm, NFormItem, NInput, NInputNumber, NDatePicker, NAutoComplete, useMessage, useDialog } from 'naive-ui'
 import {
   DownloadOutline,
   WalletOutline,
   CheckmarkCircleOutline,
   TimeOutline,
   TrendingUpOutline,
-  RemoveCircleOutline
+  RemoveCircleOutline,
+  AddOutline,
+  CreateOutline,
+  TrashOutline,
+  CalendarOutline,
+  InformationCircleOutline
 } from '@vicons/ionicons5'
+import { parseDateString, formatDateString } from '../utils/dateUtils'
 
 interface VGenCommission {
   id: string
@@ -265,6 +368,7 @@ interface Refund {
 }
 
 const message = useMessage()
+const dialog = useDialog()
 const vgenCommissions = ref<VGenCommission[]>([])
 const refunds = ref<Refund[]>([])
 const selectedYear = ref(new Date().getFullYear()) // 自动设置为当前年份
@@ -273,15 +377,64 @@ const includeNonCompletedPaid = ref(true) // 默认包含所有已付费订单
 // 退款表单
 const showRefundModal = ref(false)
 const refundFormRef = ref()
+const isEditMode = ref(false)
+const editingRefundId = ref<string | null>(null)
 const refundForm = ref({
   dateTimestamp: Date.now(),
   amount: 0,
   reason: '',
-  notes: ''
+  notes: '',
+  commissionId: undefined as string | undefined,
+  searchQuery: ''
 })
 const refundFormRules = {
   amount: { required: true, message: '请输入退款金额', trigger: 'blur', type: 'number' },
   reason: { required: true, message: '请输入退款原因', trigger: 'blur' }
+}
+
+// 选中的订单
+const selectedCommission = ref<VGenCommission | null>(null)
+
+// 订单搜索选项
+const commissionSearchOptions = computed(() => {
+  const query = refundForm.value.searchQuery.toLowerCase().trim()
+
+  if (!query) {
+    // 显示最近的20个订单
+    return vgenCommissions.value
+      .slice(0, 20)
+      .map(comm => ({
+        label: `${comm.clientName} - ${comm.serviceName} ($${comm.totalCost.toFixed(2)}) - ${comm.startDate}`,
+        value: comm.id
+      }))
+  }
+
+  // 按客户名、服务名、日期搜索
+  return vgenCommissions.value
+    .filter(comm => {
+      const clientMatch = comm.clientName.toLowerCase().includes(query)
+      const serviceMatch = comm.serviceName.toLowerCase().includes(query)
+      const dateMatch = comm.startDate.includes(query) ||
+                        comm.completedDate?.includes(query) ||
+                        comm.dueDate?.includes(query)
+      return clientMatch || serviceMatch || dateMatch
+    })
+    .slice(0, 20)
+    .map(comm => ({
+      label: `${comm.clientName} - ${comm.serviceName} ($${comm.totalCost.toFixed(2)}) - ${comm.startDate}`,
+      value: comm.id
+    }))
+})
+
+// 选择订单
+const handleSelectCommission = (value: string) => {
+  const commission = vgenCommissions.value.find(c => c.id === value)
+  if (commission) {
+    selectedCommission.value = commission
+    refundForm.value.commissionId = commission.id
+    refundForm.value.amount = commission.totalCost
+    refundForm.value.searchQuery = `${commission.clientName} - ${commission.serviceName}`
+  }
 }
 
 // 动态生成年份选项（当前年份及前后各一年）
@@ -308,40 +461,160 @@ onMounted(async () => {
   }
 })
 
-// 添加退款
-const handleAddRefund = async () => {
+// 退款记录相关函数
+
+// 按日期排序退款记录（最新的在前）
+const sortedRefunds = computed(() => {
+  return [...refunds.value].sort((a, b) => {
+    return b.date.localeCompare(a.date)
+  })
+})
+
+// 获取订单标签
+const getCommissionLabel = (commissionId: string) => {
+  const commission = vgenCommissions.value.find(c => c.id === commissionId)
+  if (commission) {
+    return `${commission.clientName} - ${commission.serviceName} ($${commission.totalCost.toFixed(2)})`
+  }
+  return '未知订单'
+}
+
+// 打开添加退款对话框
+const openAddRefundModal = () => {
+  isEditMode.value = false
+  editingRefundId.value = null
+  refundForm.value = {
+    dateTimestamp: Date.now(),
+    amount: 0,
+    reason: '',
+    notes: '',
+    commissionId: undefined,
+    searchQuery: ''
+  }
+  selectedCommission.value = null
+  showRefundModal.value = true
+}
+
+// 打开编辑退款对话框
+const handleEditRefund = (refund: Refund) => {
+  isEditMode.value = true
+  editingRefundId.value = refund.id
+
+  // 填充表单数据
+  const date = parseDateString(refund.date)
+  refundForm.value = {
+    dateTimestamp: date.getTime(),
+    amount: refund.amount,
+    reason: refund.reason,
+    notes: refund.notes || '',
+    commissionId: refund.commissionId,
+    searchQuery: ''
+  }
+
+  // 如果有关联订单，设置选中的订单
+  if (refund.commissionId) {
+    const commission = vgenCommissions.value.find(c => c.id === refund.commissionId)
+    if (commission) {
+      selectedCommission.value = commission
+      refundForm.value.searchQuery = `${commission.clientName} - ${commission.serviceName}`
+    }
+  } else {
+    selectedCommission.value = null
+  }
+
+  showRefundModal.value = true
+}
+
+// 保存退款（新增或编辑）
+const handleSaveRefund = async () => {
   try {
     await refundFormRef.value?.validate()
 
     // 转换时间戳为日期字符串
     const date = new Date(refundForm.value.dateTimestamp)
-    const dateStr = date.toISOString().split('T')[0]
+    const dateStr = formatDateString(date)
 
-    const newRefund: Refund = {
-      id: `refund-${Date.now()}`,
-      date: dateStr,
-      amount: refundForm.value.amount,
-      reason: refundForm.value.reason,
-      notes: refundForm.value.notes || undefined
+    if (isEditMode.value && editingRefundId.value) {
+      // 编辑模式：更新现有退款
+      const index = refunds.value.findIndex(r => r.id === editingRefundId.value)
+      if (index !== -1) {
+        const updatedRefund: Refund = {
+          id: editingRefundId.value,
+          date: dateStr,
+          amount: refundForm.value.amount,
+          reason: refundForm.value.reason,
+          commissionId: refundForm.value.commissionId,
+          notes: refundForm.value.notes || undefined
+        }
+
+        // 更新数组和数据库
+        refunds.value[index] = updatedRefund
+        await window.api.db.deleteRefund(editingRefundId.value)
+        await window.api.db.addRefund(updatedRefund)
+
+        message.success('退款记录已更新')
+      }
+    } else {
+      // 新增模式：添加新退款
+      const newRefund: Refund = {
+        id: `refund-${Date.now()}`,
+        date: dateStr,
+        amount: refundForm.value.amount,
+        reason: refundForm.value.reason,
+        commissionId: refundForm.value.commissionId,
+        notes: refundForm.value.notes || undefined
+      }
+
+      await window.api.db.addRefund(newRefund)
+      refunds.value.push(newRefund)
+
+      message.success('退款记录已添加')
     }
 
-    await window.api.db.addRefund(newRefund)
-    refunds.value.push(newRefund)
-
-    message.success('退款记录已添加')
-    showRefundModal.value = false
-
-    // 重置表单
-    refundForm.value = {
-      dateTimestamp: Date.now(),
-      amount: 0,
-      reason: '',
-      notes: ''
-    }
+    handleCancelRefund()
   } catch (error) {
-    message.error('添加退款失败')
+    message.error(isEditMode.value ? '更新退款失败' : '添加退款失败')
     console.error(error)
   }
+}
+
+// 取消退款操作
+const handleCancelRefund = () => {
+  showRefundModal.value = false
+  isEditMode.value = false
+  editingRefundId.value = null
+  selectedCommission.value = null
+  refundForm.value = {
+    dateTimestamp: Date.now(),
+    amount: 0,
+    reason: '',
+    notes: '',
+    commissionId: undefined,
+    searchQuery: ''
+  }
+}
+
+// 删除退款
+const handleDeleteRefund = (refund: Refund) => {
+  dialog.warning({
+    title: '确认删除',
+    content: `确定要删除这条退款记录吗？\n金额: $${refund.amount.toFixed(2)}\n原因: ${refund.reason}`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await window.api.db.deleteRefund(refund.id)
+        const index = refunds.value.findIndex(r => r.id === refund.id)
+        if (index !== -1) {
+          refunds.value.splice(index, 1)
+        }
+        message.success('退款记录已删除')
+      } catch (error) {
+        message.error('删除失败')
+        console.error(error)
+      }
+    }
+  })
 }
 
 // 统计数据
@@ -376,8 +649,9 @@ const monthlyRevenue = computed(() => {
 
   return paidCommissions.value
     .filter(c => {
-      // 使用 completedDate 或 startDate（针对未完成但已付费的订单）
-      const date = c.completedDate ? new Date(c.completedDate) : new Date(c.startDate)
+      // 使用 parseDateString 确保正确解析日期（避免UTC转换）
+      const dateStr = c.completedDate || c.startDate
+      const date = parseDateString(dateStr)
       return date.getMonth() === currentMonth && date.getFullYear() === currentYear
     })
     .reduce((sum, c) => sum + c.totalCost, 0)
@@ -402,16 +676,17 @@ const monthlyData = computed(() => {
   const data = months.map((month, index) => {
     const revenue = paidCommissions.value
       .filter(c => {
-        // 使用 completedDate 或 startDate
-        const date = c.completedDate ? new Date(c.completedDate) : new Date(c.startDate)
+        // 使用 parseDateString 确保正确解析日期（避免UTC转换）
+        const dateStr = c.completedDate || c.startDate
+        const date = parseDateString(dateStr)
         return date.getMonth() === index && date.getFullYear() === selectedYear.value
       })
       .reduce((sum, c) => sum + c.totalCost, 0)
 
-    // 计算当月退款
+    // 计算当月退款 - 使用 parseDateString 避免UTC转换
     const refundAmount = refunds.value
       .filter(r => {
-        const date = new Date(r.date)
+        const date = parseDateString(r.date)
         return date.getMonth() === index && date.getFullYear() === selectedYear.value
       })
       .reduce((sum, r) => sum + r.amount, 0)
@@ -875,6 +1150,158 @@ const formatDate = (dateStr?: string) => {
 .activity-date {
   font-size: 12px;
   color: #888;
+}
+
+/* 退款对话框 - 选中订单信息样式 */
+.selected-commission-info {
+  background: rgba(139, 92, 246, 0.05);
+  border: 1px solid rgba(139, 92, 246, 0.15);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.selected-commission-info .info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.selected-commission-info .info-row:not(:last-child) {
+  border-bottom: 1px solid rgba(139, 92, 246, 0.08);
+}
+
+.selected-commission-info .info-label {
+  font-size: 13px;
+  color: #888;
+  font-weight: 500;
+}
+
+.selected-commission-info .info-value {
+  font-size: 14px;
+  color: #e0e0e0;
+  font-weight: 600;
+}
+
+.selected-commission-info .info-value.price {
+  color: #54C5B7;
+  font-size: 16px;
+}
+
+/* 退款记录区域 */
+.refunds-section {
+  background: #1e1e1e;
+  border-radius: 16px;
+  padding: 24px;
+  margin-top: 32px;
+}
+
+.refunds-section .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.refunds-section h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #666;
+}
+
+.empty-state p {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.refunds-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.refund-item {
+  background: #2a2a2a;
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.refund-item:hover {
+  background: #333;
+  border-color: rgba(239, 68, 68, 0.3);
+  transform: translateY(-2px);
+}
+
+.refund-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.refund-date {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #888;
+  font-size: 14px;
+}
+
+.refund-amount {
+  font-size: 24px;
+  font-weight: 700;
+  color: #EF4444;
+}
+
+.refund-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.refund-details > div {
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.refund-details .label {
+  color: #888;
+  font-weight: 500;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.refund-details .value {
+  color: #e0e0e0;
+  flex: 1;
+}
+
+.refund-commission .value {
+  color: #8B5CF6;
+  font-weight: 600;
+}
+
+.refund-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 </style>
 

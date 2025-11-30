@@ -950,10 +950,8 @@ watch(schedulerViewMode, async (newMode) => {
 const todayTodos = computed(() => {
   const today = getTodayString()
   return searchedAndFilteredTasks.value.filter(task => {
-    const taskStart = new Date(task.startDate).toISOString().split('T')[0]
-    const taskEnd = new Date(task.endDate).toISOString().split('T')[0]
-    // 包含今天在任务时间范围内的所有任务
-    return taskStart <= today && taskEnd >= today && task.status !== 'completed'
+    // 直接比较日期字符串，避免时区转换
+    return task.startDate <= today && task.endDate >= today && task.status !== 'completed'
   })
 })
 
@@ -1034,9 +1032,9 @@ const allDaysInMonth = computed(() => {
   for (let day = 1; day <= lastDay.getDate(); day++) {
     const date = new Date(year, month, day)
     const dayOfWeek = date.getDay()
-    
+
     days.push({
-      date: date.toISOString().split('T')[0],
+      date: formatDateString(date),
       dayNumber: day,
       weekday: weekdayNames[dayOfWeek],
       isWeekend: dayOfWeek === 0 || dayOfWeek === 6
@@ -1096,7 +1094,7 @@ const schedulerPeriodText = computed(() => {
     const lastDay = days[days.length - 1]
     const year = schedulerCurrentDate.value.getFullYear()
     const weekNumber = getWeekNumber(schedulerCurrentDate.value)
-    return `${year}年 第${weekNumber}周 (${firstDay.dayNumber}/${schedulerCurrentDate.value.getMonth() + 1} - ${lastDay.dayNumber}/${new Date(lastDay.date).getMonth() + 1})`
+    return `${year}年 第${weekNumber}周 (${firstDay.dayNumber}/${schedulerCurrentDate.value.getMonth() + 1} - ${lastDay.dayNumber}/${parseDateString(lastDay.date).getMonth() + 1})`
   } else {
     // 月模式
     return schedulerCurrentDate.value.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' })
@@ -1130,7 +1128,7 @@ const schedulerDaysInPeriod = computed(() => {
     for (let i = 0; i < 7; i++) {
       const date = new Date(sunday)
       date.setDate(sunday.getDate() + i)
-      const dateStr = date.toISOString().split('T')[0]
+      const dateStr = formatDateString(date)
       const dayOfWeek = date.getDay()
 
       days.push({
@@ -1156,7 +1154,7 @@ const schedulerDaysInPeriod = computed(() => {
     for (let day = 1; day <= lastDay.getDate(); day++) {
       const date = new Date(year, month, day)
       const dayOfWeek = date.getDay()
-      const dateStr = date.toISOString().split('T')[0]
+      const dateStr = formatDateString(date)
 
       date.setHours(0, 0, 0, 0)
 
@@ -1310,8 +1308,8 @@ const getTaskUniqueDays = (task: ScheduledTask) => {
 // ✨ 性能优化：改为 computed 属性，避免每次渲染都重新计算
 const positionedScheduledTasks = computed(() => {
   return scheduledTasks.value.map(task => {
-    const startDate = new Date(task.startDate)
-    const endDate = new Date(task.endDate)
+    const startDate = parseDateString(task.startDate)
+    const endDate = parseDateString(task.endDate)
 
     // 获取当前显示的日期范围
     const days = schedulerDaysInPeriod.value
@@ -1482,16 +1480,16 @@ const vgenTasksForDisplay = computed(() => {
     
     // 颜色根据支付状态
     const color = comm.paymentStatus === 'PAID' ? '#10B981' : '#F59E0B'
-    
+
     // 确保日期格式正确
-    const startDate = comm.startDate || new Date().toISOString()
+    const startDate = comm.startDate || formatDateString(new Date())
     let endDate = comm.completedDate || comm.dueDate || comm.startDate
-    
+
     // 如果没有结束日期，设置为开始日期后14天
     if (!endDate || endDate === startDate) {
       const start = new Date(startDate)
       start.setDate(start.getDate() + 14)
-      endDate = start.toISOString()
+      endDate = formatDateString(start)
     }
     
     return {
@@ -1510,11 +1508,11 @@ const vgenTasksForDisplay = computed(() => {
 const positionedTasks = computed(() => {
   // 使用已经搜索和筛选过的任务
   const tasks = searchedAndFilteredTasks.value.map(task => {
-    const startDate = new Date(task.startDate)
-    const endDate = new Date(task.endDate)
+    const startDate = parseDateString(task.startDate)
+    const endDate = parseDateString(task.endDate)
     const monthStart = new Date(currentDate.value.getFullYear(), currentDate.value.getMonth(), 1)
     const monthEnd = new Date(currentDate.value.getFullYear(), currentDate.value.getMonth() + 1, 0)
-    
+
     if (endDate < monthStart || startDate > monthEnd) {
       return null
     }
@@ -2528,8 +2526,8 @@ const performDragMove = (event: MouseEvent) => {
   const newStartHour = Math.max(0, Math.min(23.5, originalStartHour + hoursOffset))
 
   // 格式化日期为 YYYY-MM-DD
-  const newStartDate = newStart.toISOString().split('T')[0]
-  const newEndDate = newEnd.toISOString().split('T')[0]
+  const newStartDate = formatDateString(newStart)
+  const newEndDate = formatDateString(newEnd)
 
   // ✅ Bug Fix 1: 使用taskId查找任务，避免子任务错位
   // 对于同一订单的多个子任务，commissionId相同，必须使用taskId或精确匹配
@@ -2674,7 +2672,7 @@ const performDragMove = (event: MouseEvent) => {
   const duration = originalTaskState.value.workDays.length
 
   for (let i = 0; i < duration; i++) {
-    workDays.push(currentDate.toISOString().split('T')[0])
+    workDays.push(formatDateString(currentDate))
     currentDate.setDate(currentDate.getDate() + 1)
   }
 
