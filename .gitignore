@@ -1,9 +1,18 @@
+# Dependencies
 node_modules
+.pnpm-debug.log*
+.pnpm-store
+
+# Build output
 dist
 out
-.DS_Store
-.eslintcache
+*.tsbuildinfo
+
+# Logs
 *.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # VGen cookies and data (privacy)
 cookies/*.json
@@ -21,7 +30,22 @@ scripts/**/*.js
 scripts/**/*.mjs
 !scripts/build-scripts.mjs
 
+# Playwright
+.playwright
+playwright/.cache
+ms-playwright
+
+# Testing
+coverage
+.nyc_output
+
+# Cache
+.cache
+.eslintcache
+*.cache
+
 # OS files
+.DS_Store
 Thumbs.db
 *.swp
 *.swo
@@ -33,3 +57,18 @@ nul
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea
+*.sublime-*
+.history
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp
+.tmp
