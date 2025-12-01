@@ -6,7 +6,7 @@ import { initDB, getDB, Task, Project, VGenService } from './db'
 import { fetchVGenCommissions, saveVGenData } from './vgen'
 import { VGenUpdater } from './vgen-updater'
 import type { SchedulerState, SchedulerConfig, ScheduledTask, PriorityConfig } from './types/scheduler'
-import { DEFAULT_PRIORITY_CONFIG } from './types/scheduler'
+import { DEFAULT_PRIORITY_CONFIG, TaskStatus } from './types/scheduler'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 
@@ -290,21 +290,22 @@ function checkAndSnap(movedType: string) {
 }
 
 // 移动小组件及其吸附的子组件
-function moveWidgetWithChildren(type: string, deltaX: number, deltaY: number) {
-  const children = snappedWidgets.get(type)
-  if (!children || children.length === 0) return
-
-  for (const child of children) {
-    const childWindow = getWidgetWindow(child.type)
-    if (!childWindow || childWindow.isDestroyed()) continue
-
-    const childBounds = childWindow.getBounds()
-    childWindow.setPosition(childBounds.x + deltaX, childBounds.y + deltaY)
-
-    // 递归移动子组件的子组件
-    moveWidgetWithChildren(child.type, deltaX, deltaY)
-  }
-}
+// 注意：此函数暂未使用，但保留以备未来功能扩展
+// function moveWidgetWithChildren(type: string, deltaX: number, deltaY: number) {
+//   const children = snappedWidgets.get(type)
+//   if (!children || children.length === 0) return
+//
+//   for (const child of children) {
+//     const childWindow = getWidgetWindow(child.type)
+//     if (!childWindow || childWindow.isDestroyed()) continue
+//
+//     const childBounds = childWindow.getBounds()
+//     childWindow.setPosition(childBounds.x + deltaX, childBounds.y + deltaY)
+//
+//     // 递归移动子组件的子组件
+//     moveWidgetWithChildren(child.type, deltaX, deltaY)
+//   }
+// }
 
 // 构建磁吸组 - 找到与某个组件相连的所有组件（深度优先搜索）
 function getSnapGroup(type: string): Set<string> {
@@ -544,7 +545,7 @@ function createControlPanelWindow(): void {
   }
 
   const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.workAreaSize
+  const { width } = primaryDisplay.workAreaSize
 
   controlPanelWindow = new BrowserWindow({
     width: 270,
@@ -591,9 +592,6 @@ function createCalendarWindow(): void {
     calendarWindow.focus()
     return
   }
-
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.workAreaSize
 
   // 加载保存的布局
   const savedLayout = loadWidgetLayout()
@@ -644,9 +642,6 @@ function createTodoWindow(): void {
     return
   }
 
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.workAreaSize
-
   // 加载保存的布局
   const savedLayout = loadWidgetLayout()
   const todoLayout = savedLayout?.todo
@@ -696,9 +691,6 @@ function createAppsWindow(): void {
     return
   }
 
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.workAreaSize
-
   // 加载保存的布局
   const savedLayout = loadWidgetLayout()
   const appsLayout = savedLayout?.apps
@@ -747,9 +739,6 @@ function createQuickRepliesWindow(): void {
     quickRepliesWindow.focus()
     return
   }
-
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.workAreaSize
 
   // 加载保存的布局
   const savedLayout = loadWidgetLayout()
@@ -801,9 +790,6 @@ function createTimerWindow(): void {
     timerWindow.focus()
     return
   }
-
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.workAreaSize
 
   // 加载保存的布局
   const savedLayout = loadWidgetLayout()
@@ -1216,7 +1202,7 @@ function registerDBHandlers(): void {
         hoursPerDay: task.hoursPerDay ? JSON.parse(JSON.stringify(task.hoursPerDay)) : {},
         totalHours: Number(task.totalHours),
         isLocked: Boolean(task.isLocked),
-        status: task.status || 'NORMAL', // ✨ 确保保存 status 字段，默认为 NORMAL
+        status: task.status || TaskStatus.NORMAL, // ✨ 确保保存 status 字段，默认为 NORMAL
         priorityScore: task.priorityScore !== undefined ? Number(task.priorityScore) : undefined,
         // ✨ 新增：保存子任务相关信息
         parentTaskId: task.parentTaskId !== undefined ? String(task.parentTaskId) : undefined,
@@ -1889,7 +1875,7 @@ function registerWidgetHandlers(): void {
     try {
       if (process.platform === 'win32') {
         // Windows: 使用 start 命令
-        await execAsync(`start "" "${appPath}"`, { shell: true })
+        await execAsync(`start "" "${appPath}"`)
       } else if (process.platform === 'darwin') {
         // macOS: 使用 open 命令
         await execAsync(`open "${appPath}"`)
