@@ -50,9 +50,27 @@ import { app } from 'electron'
 
 const DATA_FILE = join(__dirname, '..', 'vgen-commissions-data.json')
 
-// 使用实际的数据库路径（但在脚本中无法访问 app.getPath，所以使用固定路径）
-// Windows: C:\Users\USERNAME\AppData\Roaming\berrydone\berrydone.json
-const DB_FILE = join(process.env.APPDATA || '', 'berrydone', 'berrydone.json')
+// 数据库路径逻辑与 src/main/db.ts 保持一致
+function getDBPath(): string {
+  // 检查是否有环境变量指定的路径（从 vgen-updater 传递）
+  if (process.env.DB_PATH) {
+    return process.env.DB_PATH
+  }
+
+  // 判断是否在打包环境
+  const isPackaged = process.env.ELECTRON_IS_PACKAGED === 'true' || !process.cwd().includes('node_modules')
+
+  if (isPackaged && process.resourcesPath) {
+    // 打包环境
+    return join(process.resourcesPath, 'data', 'berrydone.json')
+  } else {
+    // 开发环境
+    return join(process.cwd(), 'data', 'berrydone.json')
+  }
+}
+
+const DB_FILE = getDBPath()
+console.log('[导入脚本] 数据库路径:', DB_FILE)
 
 /**
  * 状态映射 - 使用 phaseID 字段

@@ -1036,6 +1036,36 @@ onMounted(async () => {
 })
 ```
 
+### 6. 更新数据后不显示（重置数据库后）
+```
+数据抓取成功，但 Timeline 和 Commissions 页面不显示数据
+```
+**原因**: 导入脚本使用了错误的数据库路径（硬编码路径不匹配开发环境）
+
+**解决**: 已修复 `scripts/import-vgen-commissions.ts` 和 `scripts/import-vgen-services.ts`
+```typescript
+// ❌ 错误 - 硬编码路径
+const DB_FILE = path.join(process.env.APPDATA || '', 'berrydone', 'berrydone.json')
+
+// ✅ 正确 - 动态检测路径
+function getDBPath(): string {
+  if (process.env.DB_PATH) {
+    return process.env.DB_PATH
+  }
+
+  const isPackaged = process.env.ELECTRON_IS_PACKAGED === 'true' || !process.cwd().includes('node_modules')
+
+  if (isPackaged && process.resourcesPath) {
+    return path.join(process.resourcesPath, 'data', 'berrydone.json')
+  } else {
+    // 开发环境: data/berrydone.json
+    return path.join(process.cwd(), 'data', 'berrydone.json')
+  }
+}
+
+const DB_FILE = getDBPath()
+```
+
 ---
 
 ## 📝 开发规范

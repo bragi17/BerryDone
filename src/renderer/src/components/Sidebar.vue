@@ -8,10 +8,13 @@
           <n-icon :component="ChevronDown" size="16" />
         </div>
       </n-dropdown>
-      <div class="settings-icon-wrapper">
+      <div class="settings-icon-wrapper" @click="showSettings = true">
         <n-icon :component="SettingsOutline" :size="20" class="settings-icon" />
       </div>
     </div>
+
+    <!-- Settings Dialog -->
+    <Settings v-model:show="showSettings" />
 
     <div class="search-box">
       <n-input placeholder="搜索..." size="small">
@@ -57,11 +60,12 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { 
-  NIcon, 
-  NInput, 
-  NDropdown 
+import {
+  NIcon,
+  NInput,
+  NDropdown
 } from 'naive-ui'
 import {
   SearchOutline,
@@ -74,9 +78,11 @@ import {
   BriefcaseOutline,
   GridOutline
 } from '@vicons/ionicons5'
+import Settings from './Settings.vue'
 
 const router = useRouter()
 const route = useRoute()
+const showSettings = ref(false)
 
 const toggleWidget = () => {
   // 通过 IPC 通知主进程打开/关闭桌面小组件窗口

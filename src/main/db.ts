@@ -95,6 +95,7 @@ export interface Database {
   priorityConfig?: PriorityConfig // 优先级配置
   refunds?: Refund[] // 退款记录
   widgetLayout?: WidgetLayout // 小组件布局配置
+  appSettings?: AppSettings // 应用设置
 }
 
 // 工时配置
@@ -102,6 +103,25 @@ export interface WorkHoursConfig {
   globalDefault: number // 全局默认工时（小时）
   categoryDefaults: Record<string, number> // 按类别设置的默认工时
   serviceOverrides: Record<string, number> // 按具体 service ID 设置的工时
+}
+
+// 应用设置
+export interface AppSettings {
+  // 数据自动更新设置
+  autoUpdate: {
+    timeline: {
+      enabled: boolean // 是否启用自动更新
+      interval: number // 更新间隔（分钟）0=禁用
+    }
+    commissions: {
+      enabled: boolean
+      interval: number // 更新间隔（分钟）0=禁用
+    }
+  }
+  // 智能排单设置
+  scheduler: {
+    lockDays: number // 锁定近期N天的排单，只排N天后的订单（0=不锁定）
+  }
 }
 
 // 默认数据
@@ -121,6 +141,21 @@ const defaultData: Database = {
     globalDefault: 8,
     categoryDefaults: {},
     serviceOverrides: {}
+  },
+  appSettings: {
+    autoUpdate: {
+      timeline: {
+        enabled: false,
+        interval: 60 // 默认60分钟
+      },
+      commissions: {
+        enabled: false,
+        interval: 60
+      }
+    },
+    scheduler: {
+      lockDays: 0 // 默认不锁定
+    }
   }
 }
 
@@ -170,6 +205,26 @@ export async function initDB(): Promise<Low<Database>> {
   // 确保 refunds 存在
   if (!db.data.refunds) {
     db.data.refunds = []
+    await db.write()
+  }
+
+  // 确保 appSettings 存在
+  if (!db.data.appSettings) {
+    db.data.appSettings = {
+      autoUpdate: {
+        timeline: {
+          enabled: false,
+          interval: 60
+        },
+        commissions: {
+          enabled: false,
+          interval: 60
+        }
+      },
+      scheduler: {
+        lockDays: 0
+      }
+    }
     await db.write()
   }
 

@@ -1091,6 +1091,65 @@ function registerDBHandlers(): void {
     return true
   })
 
+  // 应用设置相关
+  ipcMain.handle('db:getAppSettings', async () => {
+    const db = getDB()
+    await db.read()
+    return db.data.appSettings || null
+  })
+
+  ipcMain.handle('db:saveAppSettings', async (_event, settings: any) => {
+    const db = getDB()
+    await db.read()
+    db.data.appSettings = settings
+    await db.write()
+    return true
+  })
+
+  // 重置数据库为空状态
+  ipcMain.handle('db:resetDatabase', async () => {
+    const db = getDB()
+    await db.read()
+
+    // 保存当前的 appSettings（如果存在）
+    const currentAppSettings = db.data.appSettings
+
+    // 重置所有数据为空，但保留结构
+    db.data = {
+      tasks: [],
+      projects: [
+        {
+          id: 'vgen',
+          name: 'VGen Commissions',
+          color: '#54C5B7',
+          icon: '🎨'
+        }
+      ],
+      vgenCommissions: [],
+      vgenServices: [],
+      workHoursConfig: {
+        globalDefault: 8,
+        categoryDefaults: {},
+        serviceOverrides: {}
+      },
+      priorityConfig: DEFAULT_PRIORITY_CONFIG,
+      refunds: [],
+      schedulerState: undefined,
+      widgetLayout: undefined,
+      appSettings: currentAppSettings || {
+        autoUpdate: {
+          timeline: { enabled: false, interval: 60 },
+          commissions: { enabled: false, interval: 60 }
+        },
+        scheduler: { lockDays: 0 }
+      }
+    }
+
+    await db.write()
+    console.log('[DB] 数据库已重置为空状态')
+    return true
+  })
+
   // Scheduler 相关
   ipcMain.handle('scheduler:getState', async () => {
     const db = getDB()

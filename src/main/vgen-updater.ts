@@ -248,7 +248,7 @@ export class VGenUpdater {
       // 执行子进程
       const child = spawn(command, args, {
         cwd: app.isPackaged ? process.resourcesPath : process.cwd(),
-        shell: false,  // 不使用 shell，直接执行（更安全，不依赖系统环境）
+        shell: app.isPackaged ? false : true,  // 开发环境使用 shell 以找到 pnpm
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true

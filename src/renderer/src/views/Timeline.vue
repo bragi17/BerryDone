@@ -3400,7 +3400,19 @@ const runScheduling = async () => {
       console.error('[Timeline] 加载工时配置失败:', error)
     }
 
-    // 运行排单算法（包含优先级配置）
+    // 加载应用设置（获取 lockDays）
+    let lockDays = 0
+    try {
+      const appSettings = await window.electron.ipcRenderer.invoke('db:getAppSettings')
+      if (appSettings?.scheduler?.lockDays) {
+        lockDays = appSettings.scheduler.lockDays
+        console.log('[Timeline] 智能排单锁定天数:', lockDays)
+      }
+    } catch (error) {
+      console.error('[Timeline] 加载应用设置失败:', error)
+    }
+
+    // 运行排单算法（包含优先级配置和 lockDays）
     const result = scheduleCommissions(
       vgenCommissions.value,
       schedulerConfig.value,
@@ -3416,7 +3428,8 @@ const runScheduling = async () => {
       workHoursConfig,
       priorityConfig.value, // 传递优先级配置
       vgenServices.value, // 传递服务列表
-      scheduledTasks.value // 传递现有的排单任务，保留锁定和完成状态的任务
+      scheduledTasks.value, // 传递现有的排单任务，保留锁定和完成状态的任务
+      lockDays // 传递锁定天数
     )
 
     // 确保结果是纯 JSON 对象（移除任何无法序列化的属性）

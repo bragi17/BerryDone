@@ -15,19 +15,27 @@ interface Database {
 
 const DATA_FILE = path.join(process.cwd(), 'vgen-services-data.json')
 
-// 获取 Electron 的 userData 路径（Windows）
-function getAppDataPath(): string {
-  const platform = process.platform
-  if (platform === 'win32') {
-    return path.join(os.homedir(), 'AppData', 'Roaming', 'berrydone')
-  } else if (platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', 'berrydone')
+// 数据库路径逻辑与 src/main/db.ts 保持一致
+function getDBPath(): string {
+  // 检查是否有环境变量指定的路径（从 vgen-updater 传递）
+  if (process.env.DB_PATH) {
+    return process.env.DB_PATH
+  }
+
+  // 判断是否在打包环境
+  const isPackaged = process.env.ELECTRON_IS_PACKAGED === 'true' || !process.cwd().includes('node_modules')
+
+  if (isPackaged && process.resourcesPath) {
+    // 打包环境
+    return path.join(process.resourcesPath, 'data', 'berrydone.json')
   } else {
-    return path.join(os.homedir(), '.config', 'berrydone')
+    // 开发环境
+    return path.join(process.cwd(), 'data', 'berrydone.json')
   }
 }
 
-const DB_FILE = path.join(getAppDataPath(), 'berrydone.json')
+const DB_FILE = getDBPath()
+console.log('[导入脚本] 数据库路径:', DB_FILE)
 
 async function run() {
   console.log('📦 导入 VGen 服务列表到数据库')

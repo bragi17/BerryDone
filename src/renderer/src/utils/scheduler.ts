@@ -364,15 +364,53 @@ export function scheduleCommissions(
   workHoursConfig?: WorkHoursConfig | null,
   priorityConfig?: PriorityConfig | null,
   services?: any[],
-  existingTasks?: ScheduledTask[]
+  existingTasks?: ScheduledTask[],
+  lockDays?: number  // 锁定近期N天的排单
 ): ScheduledTask[] {
-  // 提取锁定和完成的任务（这些任务不会被重新排单）
-  const lockedTasks = (existingTasks || []).filter(
+  // 计算锁定截止日期（从今天到今天+lockDays天）
+  const today = getTodayString()
+  const lockEndDate = lockDays && lockDays > 0
+    ? addDays(today, lockDays)
+    : null
+
+  console.log('[Scheduler] 今天:', today)
+  console.log('[Scheduler] 锁定天数:', lockDays)
+  console.log('[Scheduler] 锁定截止日期:', lockEndDate)
+
+  // 分离锁定期内和锁定期外的任务
+  const tasksInLockPeriod: ScheduledTask[] = []
+  const tasksAfterLockPeriod: ScheduledTask[] = []
+
+  // 提取手动锁定和完成状态的任务（这些任务永远不会被重新排单）
+  const manuallyLockedTasks = (existingTasks || []).filter(
     task => task.status === TaskStatus.LOCKED || task.status === TaskStatus.COMPLETED
   )
 
-  // 获取已被锁定/完成任务占用的 commission IDs
-  const lockedCommissionIds = new Set(lockedTasks.map(task => task.commissionId))
+  if (lockEndDate && existingTasks) {
+    // 将现有任务按日期范围分类
+    existingTasks.forEach(task => {
+      // 手动锁定或完成的任务总是保留
+      if (task.status === TaskStatus.LOCKED || task.status === TaskStatus.COMPLETED) {
+        tasksInLockPeriod.push(task)
+        return
+      }
+
+      // 检查任务是否有任何一天在锁定范围内（小于锁定截止日期）
+      const hasLockedDay = task.workDays.some(day => day < lockEndDate)
+      if (hasLockedDay) {
+        // 保留锁定期内的任务（不改变状态）
+        tasksInLockPeriod.push(task)
+      }
+    })
+  } else {
+    // 没有设置 lockDays，只保留手动锁定和完成的任务
+    tasksInLockPeriod.push(...manuallyLockedTasks)
+  }
+
+  console.log('[Scheduler] 锁定期内保留的任务数:', tasksInLockPeriod.length)
+
+  // 获取被保留任务占用的 commission IDs（这些订单不参与重新排单）
+  const lockedCommissionIds = new Set(tasksInLockPeriod.map(task => task.commissionId))
 
   // Step 1: 过滤出需要排单的订单（IN_PROGRESS 和 PENDING，且不在锁定任务中）
   const pendingTasks = commissions.filter(
@@ -407,15 +445,26 @@ export function scheduleCommissions(
   const dailySchedule: Map<string, number> = new Map() // 日期 -> 已使用工时
   const MIN_SUBTASK_HOURS = 1.0 // 最小子任务工时
 
-  // 初始化：将锁定任务的工时计入日程表
-  lockedTasks.forEach(task => {
+  // 初始化：将锁定期内任务的工时计入日程表
+  tasksInLockPeriod.forEach(task => {
     task.workDays.forEach(day => {
       const hoursUsed = task.hoursPerDay[day] || 0
       dailySchedule.set(day, (dailySchedule.get(day) || 0) + hoursUsed)
     })
   })
 
-  let currentDate = options.startFrom || getTodayString()
+  // 设置排单起始日期
+  // 如果设置了 lockDays，从锁定截止日期开始排单（即锁定期的后一天）
+  // 否则从用户指定的日期或今天开始
+  let currentDate: string
+  if (lockEndDate) {
+    currentDate = lockEndDate
+    console.log('[Scheduler] 从锁定截止日期后开始排单:', currentDate)
+  } else {
+    currentDate = options.startFrom || today
+    console.log('[Scheduler] 从今天开始排单:', currentDate)
+  }
+
   let safety = 0
   const maxIterations = 365
 
@@ -503,8 +552,8 @@ export function scheduleCommissions(
 
         // 查找该天已经占用的时间段
         const dayOccupied: Array<{start: number, end: number}> = []
-        // 包括锁定任务
-        lockedTasks.forEach(existingTask => {
+        // 包括锁定期内的任务
+        tasksInLockPeriod.forEach(existingTask => {
           if (existingTask.workDays.includes(firstDay)) {
             const existingStartHour = (existingTask as any).startHour ?? 9
             const existingHours = existingTask.totalHours / existingTask.workDays.length
@@ -576,8 +625,8 @@ export function scheduleCommissions(
 
       // 查找该天已经占用的时间段
       const dayOccupied: Array<{start: number, end: number}> = []
-      // 包括锁定任务
-      lockedTasks.forEach(existingTask => {
+      // 包括锁定期内的任务
+      tasksInLockPeriod.forEach(existingTask => {
         if (existingTask.workDays.includes(firstDay)) {
           const existingStartHour = (existingTask as any).startHour ?? 9
           const existingHours = existingTask.totalHours / existingTask.workDays.length
@@ -629,8 +678,10 @@ export function scheduleCommissions(
     }
   }
 
-  // 合并锁定任务和新排单的任务
-  return [...lockedTasks, ...result]
+  // 合并锁定期内的任务和新排单的任务
+  console.log('[Scheduler] 新排单任务数:', result.length)
+  console.log('[Scheduler] 总任务数（含锁定）:', tasksInLockPeriod.length + result.length)
+  return [...tasksInLockPeriod, ...result]
 }
 
 /**
