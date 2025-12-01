@@ -32,6 +32,23 @@ const dragStartY = ref(0)
 const windowStartX = ref(0)
 const windowStartY = ref(0)
 
+// 鼠标穿透控制
+const setMouseThrough = (ignore: boolean) => {
+  window.electron.ipcRenderer.invoke('widget:setMouseThrough', ignore)
+}
+
+// 监听鼠标进入可交互区域
+const handleMouseEnter = () => {
+  // 鼠标进入时，禁用穿透（捕获鼠标事件）
+  setMouseThrough(false)
+}
+
+// 监听鼠标离开可交互区域
+const handleMouseLeave = () => {
+  // 鼠标离开时，启用穿透（鼠标事件穿过）
+  setMouseThrough(true)
+}
+
 // 草莓按钮点击
 const toggleMenu = async () => {
   showMenu.value = !showMenu.value
@@ -171,13 +188,20 @@ onUnmounted(() => {
       class="strawberry-button"
       @mousedown="startDrag"
       @click="handleStrawberryClick"
+      @mouseenter="handleMouseEnter"
+      @mouseleave="handleMouseLeave"
       :class="{ dragging: isDragging }"
     >
       🍓
     </button>
 
     <!-- 下拉菜单 -->
-    <div v-if="showMenu" class="dropdown-menu">
+    <div
+      v-if="showMenu"
+      class="dropdown-menu"
+      @mouseenter="handleMouseEnter"
+      @mouseleave="handleMouseLeave"
+    >
       <!-- 小组件开关 -->
       <div class="menu-section">
         <div class="section-title">小组件</div>

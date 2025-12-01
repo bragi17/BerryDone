@@ -565,6 +565,8 @@ function createControlPanelWindow(): void {
 
   controlPanelWindow.on('ready-to-show', () => {
     controlPanelWindow?.show()
+    // 默认启用鼠标穿透，只在鼠标悬停在可交互区域时才捕获事件
+    controlPanelWindow?.setIgnoreMouseEvents(true, { forward: true })
     // 延迟一下确保窗口完全加载后再广播状态
     setTimeout(() => {
       broadcastStateChange()
@@ -1694,6 +1696,15 @@ function registerWidgetHandlers(): void {
     if (resizeState.intervalId) {
       clearInterval(resizeState.intervalId)
       resizeState.intervalId = null
+    }
+  })
+
+  // 设置控制面板鼠标穿透状态
+  ipcMain.handle('widget:setMouseThrough', (_event, ignore: boolean) => {
+    if (controlPanelWindow && !controlPanelWindow.isDestroyed()) {
+      // ignore = true: 启用穿透（鼠标事件穿过窗口）
+      // ignore = false: 禁用穿透（窗口捕获鼠标事件）
+      controlPanelWindow.setIgnoreMouseEvents(ignore, { forward: true })
     }
   })
 
