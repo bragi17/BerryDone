@@ -2,7 +2,7 @@
 import fs from 'fs'
 import path from 'path'
 
-const COOKIES_FILE = path.join(process.cwd(), 'data', 'cookies', 'fur31mu.json')
+const COOKIES_FILE = path.join(process.cwd(), 'data', 'cookies', 'cookies.json')
 
 console.log('🍪 检查 Cookies 文件')
 console.log('================================\n')

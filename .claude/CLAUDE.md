@@ -955,7 +955,7 @@ window.api.scheduler = {
 ### VGen数据抓取
 ```typescript
 // 流程
-1. 读取cookies/fur31mu.json
+1. 读取cookies/cookies.json
 2. 启动Playwright浏览器（headless）
 3. 访问VGen commissions页面
 4. 提取window.__NEXT_DATA__或拦截API响应
@@ -988,7 +988,7 @@ window.api.scheduler = {
 ```
 Error: Failed to fetch VGen data: 401 Unauthorized
 ```
-**解决**: 使用EditThisCookie扩展导出新cookies到`cookies/fur31mu.json`
+**解决**: 使用EditThisCookie扩展导出新cookies到`cookies/cookies.json`
 
 ### 2. 数据库序列化错误
 ```
@@ -1069,7 +1069,7 @@ console.log('[Scheduler] Current config:', config)
 
 ## 🔐 安全要点
 
-- **Cookie管理**: `cookies/fur31mu.json`（已.gitignore）
+- **Cookie管理**: `cookies/cookies.json`（已.gitignore）
 - **本地存储**: 所有数据仅存储在本地
 - **IPC安全**: Context Isolation启用，仅暴露必要API
 - **权限控制**: Preload脚本限制渲染进程权限

@@ -16,7 +16,7 @@ interface VGenCookie {
 }
 
 // Cookie 文件路径
-const COOKIE_FILE = join(__dirname, '..', 'data', 'cookies', 'fur31mu.json')
+const COOKIE_FILE = join(__dirname, '..', 'data', 'cookies', 'cookies.json')
 const OUTPUT_FILE = join(__dirname, '..', 'vgen-output.json')
 
 /**
@@ -29,7 +29,7 @@ function loadCookies(): VGenCookie[] {
     console.log('1. 在浏览器中登录 https://vgen.co')
     console.log('2. 按 F12 打开开发者工具')
     console.log('3. 进入 Application > Cookies > https://vgen.co')
-    console.log('4. 复制所有 cookies，保存为 JSON 格式到 cookies/fur31mu.json')
+    console.log('4. 复制所有 cookies，保存为 JSON 格式到 cookies/cookies.json')
     process.exit(1)
   }
 

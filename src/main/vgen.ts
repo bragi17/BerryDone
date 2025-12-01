@@ -4,7 +4,7 @@ import { readFileSync, existsSync, writeFileSync } from 'fs'
 import type { VGenCookie, VGenCommission, VGenFetchResult } from './types/vgen'
 
 const COOKIES_DIR = join(app.getPath('userData'), '..', '..', 'cookies')
-const COOKIE_FILE = join(COOKIES_DIR, 'fur31mu.json')
+const COOKIE_FILE = join(COOKIES_DIR, 'cookies.json')
 
 /**
  * 读取保存的 VGen Cookies
@@ -182,7 +182,7 @@ export async function fetchVGenCommissions(): Promise<VGenFetchResult> {
     if (!cookies || cookies.length === 0) {
       return {
         success: false,
-        error: '未找到 Cookie，请先在 cookies/fur31mu.json 中添加你的 VGen cookies',
+        error: '未找到 Cookie，请先在 cookies/cookies.json 中添加你的 VGen cookies',
         timestamp
       }
     }

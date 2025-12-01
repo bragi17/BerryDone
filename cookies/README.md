@@ -7,13 +7,13 @@ This directory stores VGen authentication cookies required for data synchronizat
 1. Install the [EditThisCookie](https://chrome.google.com/webstore/detail/editthiscookie) browser extension
 2. Log in to [VGen.co](https://vgen.co)
 3. Click the EditThisCookie icon and export cookies
-4. Save the exported JSON file as `fur31mu.json` in this directory
+4. Save the exported JSON file as `cookies.json` in this directory
 
 ## File Structure
 
 ```
 cookies/
-└── fur31mu.json  (Required - Your VGen cookies)
+└── cookies.json  (Required - Your VGen cookies)
 ```
 
 ## Security Notice
@@ -27,5 +27,5 @@ cookies/
 
 VGen cookies may expire after some time. If you encounter authentication errors:
 1. Re-export fresh cookies from your browser
-2. Replace the old `fur31mu.json` file
+2. Replace the old `cookies.json` file
 3. Try syncing again

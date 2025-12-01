@@ -78,7 +78,7 @@ The installer will be generated in the `dist/` directory.
 1. Install [EditThisCookie](https://chrome.google.com/webstore/detail/editthiscookie) browser extension
 2. Log in to [VGen.co](https://vgen.co)
 3. Click EditThisCookie icon → Export → Copy JSON
-4. Save as `cookies/fur31mu.json`
+4. Save as `cookies/cookies.json`
 
 See `cookies/README.md` for details.
 

@@ -23,7 +23,7 @@ interface VGenCookie {
 }
 
 // Cookie 文件路径
-const COOKIE_FILE = join(__dirname, '..', 'data', 'cookies', 'fur31mu.json')
+const COOKIE_FILE = join(__dirname, '..', 'data', 'cookies', 'cookies.json')
 const OUTPUT_FILE = join(__dirname, '..', 'vgen-commissions-data.json')
 
 /**
