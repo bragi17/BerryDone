@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { formatDateString, getTodayString } from '../../utils/dateUtils'
 
 interface ScheduledTask {
   commissionId: string
@@ -22,7 +23,7 @@ interface Commission {
 const currentDate = ref(new Date())
 const scheduledTasks = ref<ScheduledTask[]>([])
 const commissions = ref<Commission[]>([])
-const selectedDate = ref<string>(new Date().toISOString().split('T')[0]) // 默认选中今天
+const selectedDate = ref<string>(getTodayString()) // 默认选中今天
 
 const currentYear = computed(() => currentDate.value.getFullYear())
 const currentMonth = computed(() => currentDate.value.getMonth())
@@ -61,7 +62,7 @@ const loadTasks = async () => {
 
 // 获取指定日期的任务数量
 const getTaskCountForDate = (year: number, month: number, date: number): number => {
-  const targetDate = new Date(year, month, date).toISOString().split('T')[0]
+  const targetDate = formatDateString(new Date(year, month, date))
 
   // 统计该日期有排单的任务数量
   return scheduledTasks.value.filter((task) => {
@@ -155,7 +156,7 @@ const nextMonth = () => {
 const goToToday = () => {
   const today = new Date()
   currentDate.value = today
-  const todayStr = today.toISOString().split('T')[0]
+  const todayStr = getTodayString()
   selectedDate.value = todayStr
   console.log('[CalendarWidget] 回到今天:', todayStr)
 
@@ -165,7 +166,7 @@ const goToToday = () => {
 
 // 选择日期
 const selectDate = (year: number, month: number, date: number) => {
-  const dateStr = new Date(year, month, date).toISOString().split('T')[0]
+  const dateStr = formatDateString(new Date(year, month, date))
   selectedDate.value = dateStr
   console.log('[CalendarWidget] 选中日期:', dateStr)
 
@@ -227,7 +228,7 @@ onMounted(() => {
         :class="{
           'other-month': !day.isCurrentMonth,
           today: day.isToday,
-          selected: selectedDate === new Date(day.year, day.month, day.date).toISOString().split('T')[0],
+          selected: selectedDate === formatDateString(new Date(day.year, day.month, day.date)),
           'has-tasks': day.taskCount > 0
         }"
         @click="selectDate(day.year, day.month, day.date)"

@@ -618,6 +618,8 @@ function createCalendarWindow(): void {
 
   calendarWindow.on('ready-to-show', () => {
     calendarWindow?.show()
+    // 窗口显示后广播状态变化
+    setTimeout(() => broadcastStateChange(), 50)
   })
 
   calendarWindow.on('closed', () => {
@@ -668,6 +670,8 @@ function createTodoWindow(): void {
 
   todoWindow.on('ready-to-show', () => {
     todoWindow?.show()
+    // 窗口显示后广播状态变化
+    setTimeout(() => broadcastStateChange(), 50)
   })
 
   todoWindow.on('closed', () => {
@@ -718,6 +722,8 @@ function createAppsWindow(): void {
 
   appsWindow.on('ready-to-show', () => {
     appsWindow?.show()
+    // 窗口显示后广播状态变化
+    setTimeout(() => broadcastStateChange(), 50)
   })
 
   appsWindow.on('closed', () => {
@@ -768,6 +774,8 @@ function createQuickRepliesWindow(): void {
 
   quickRepliesWindow.on('ready-to-show', () => {
     quickRepliesWindow?.show()
+    // 窗口显示后广播状态变化
+    setTimeout(() => broadcastStateChange(), 50)
   })
 
   quickRepliesWindow.on('closed', () => {
@@ -820,6 +828,8 @@ function createTimerWindow(): void {
 
   timerWindow.on('ready-to-show', () => {
     timerWindow?.show()
+    // 窗口显示后广播状态变化
+    setTimeout(() => broadcastStateChange(), 50)
   })
 
   timerWindow.on('closed', () => {
@@ -1394,6 +1404,24 @@ function registerWidgetHandlers(): void {
     let window: BrowserWindow | null = null
     let createFunc: (() => void) | null = null
 
+    // 获取当前窗口引用的函数
+    const getWindow = (): BrowserWindow | null => {
+      switch (type) {
+        case 'calendar':
+          return calendarWindow
+        case 'todo':
+          return todoWindow
+        case 'apps':
+          return appsWindow
+        case 'quick-replies':
+          return quickRepliesWindow
+        case 'timer':
+          return timerWindow
+        default:
+          return null
+      }
+    }
+
     switch (type) {
       case 'calendar':
         window = calendarWindow
@@ -1432,8 +1460,9 @@ function registerWidgetHandlers(): void {
     // 广播状态变化
     setTimeout(() => broadcastStateChange(), 100)
 
-    // 返回新状态
-    return window && !window.isDestroyed() && window.isVisible()
+    // 返回新状态（重新获取窗口引用）
+    const currentWindow = getWindow()
+    return currentWindow !== null && !currentWindow.isDestroyed() && currentWindow.isVisible()
   })
 
   // 获取所有小组件状态

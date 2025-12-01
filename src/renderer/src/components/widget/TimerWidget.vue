@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { NButton, NIcon, NInput, NSelect, useMessage } from 'naive-ui'
 import { AddCircleOutline, CloseCircleOutline, CreateOutline, PlayOutline, PauseOutline } from '@vicons/ionicons5'
+import { formatDateString, getTodayString } from '../../utils/dateUtils'
 
 interface Timer {
   id: string
@@ -48,21 +49,51 @@ const saveTimers = () => {
 // 加载今日 todo 列表
 const loadTodayTodos = async () => {
   try {
-    const tasks = await window.electron.ipcRenderer.invoke('db:getTasks')
-    const today = new Date().toISOString().split('T')[0]
+    console.log('[TimerWidget] 开始加载今日待办...')
 
-    // 筛选今日的 todo
-    const todayTasks = tasks.filter((task: any) => {
-      const taskDate = task.startDate?.split('T')[0]
-      return taskDate === today && task.status !== 'completed'
-    })
+    // 获取排单数据
+    const scheduledTasks = await window.electron.ipcRenderer.invoke('scheduler:getScheduledTasks')
+    console.log('[TimerWidget] 排单总数:', scheduledTasks?.length || 0)
 
-    todayTodos.value = todayTasks.map((task: any) => ({
-      label: task.title,
-      value: task.title
-    }))
+    if (!scheduledTasks || scheduledTasks.length === 0) {
+      console.log('[TimerWidget] 无排单数据')
+      todayTodos.value = []
+      return
+    }
+
+    // 获取 Commission 数据
+    const commissions = await window.electron.ipcRenderer.invoke('db:getVGenCommissions')
+    console.log('[TimerWidget] Commissions 总数:', commissions?.length || 0)
+
+    // 创建 commission map
+    const commissionMap = new Map(commissions.map((c: any) => [c.commissionID || c.id, c]))
+
+    // 获取今日日期字符串（时区安全）
+    const today = getTodayString()
+    console.log('[TimerWidget] 今日日期:', today)
+
+    // 筛选今日的排单任务
+    const todayTasks = scheduledTasks
+      .filter((task: any) => {
+        const hasToday = task.workDays && task.workDays.includes(today)
+        if (hasToday) {
+          console.log('[TimerWidget] 今日任务:', task.commissionId)
+        }
+        return hasToday
+      })
+      .map((task: any) => {
+        const commission = commissionMap.get(task.commissionId)
+        const label = commission?.projectName || `任务 ${task.commissionId}`
+        return {
+          label,
+          value: label
+        }
+      })
+
+    todayTodos.value = todayTasks
+    console.log('[TimerWidget] 今日待办数量:', todayTodos.value.length)
   } catch (error) {
-    console.error('Failed to load today todos:', error)
+    console.error('[TimerWidget] 加载今日待办失败:', error)
     todayTodos.value = []
   }
 }
@@ -82,7 +113,8 @@ const getCurrentSeconds = (timer: Timer): number => {
     // 使用 currentTime.value 来确保响应式更新
     const now = currentTime.value
     const elapsed = Math.floor((now - timer.startTime) / 1000)
-    return timer.totalSeconds + elapsed
+    // 确保不会显示负数
+    return timer.totalSeconds + Math.max(0, elapsed)
   }
   return timer.totalSeconds
 }
@@ -127,9 +159,10 @@ const toggleTimer = (timer: Timer) => {
     timer.isRunning = false
     timer.startTime = null
   } else {
-    // 开始
+    // 开始 - 先更新 currentTime 再设置 startTime，避免时间差
+    currentTime.value = Date.now()
     timer.isRunning = true
-    timer.startTime = Date.now()
+    timer.startTime = currentTime.value
   }
   saveTimers()
 }
@@ -214,10 +247,18 @@ onMounted(() => {
   loadTimers()
   loadTodayTodos()
   startUpdateInterval()
+
+  // 监听任务更新事件
+  window.electron.ipcRenderer.on('tasks:updated', () => {
+    console.log('[TimerWidget] 收到 tasks:updated 事件，重新加载今日待办...')
+    loadTodayTodos()
+  })
 })
 
 onUnmounted(() => {
   stopUpdateInterval()
+  // 移除事件监听器
+  window.electron.ipcRenderer.removeAllListeners('tasks:updated')
 })
 </script>
 
@@ -311,6 +352,8 @@ onUnmounted(() => {
   gap: 8px;
   flex-shrink: 0;
   min-height: 120px;
+  margin-top: 20px; /* 避免被title bar遮挡 */
+  padding-top: 8px;
 }
 
 .form-actions {
@@ -325,7 +368,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
-  padding-top: 16px;
+  padding-top: 8px; /* 减少顶部边距，因为添加表单已有足够间距 */
   min-height: 0;
   padding-bottom: 8px;
 }

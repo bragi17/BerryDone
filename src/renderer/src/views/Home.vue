@@ -337,7 +337,7 @@ const editingDayScheduledTasks = ref<ScheduledTask[]>([]) // 当日排单任务
 // 计算单日设置对话框标题
 const daySettingsTitle = computed(() => {
   if (!editingDayData.value) return '日期设置'
-  const date = new Date(editingDayData.value.date)
+  const date = parseDateString(editingDayData.value.date)
   return date.toLocaleDateString('zh-CN', {
     year: 'numeric',
     month: 'long',
@@ -389,7 +389,7 @@ const loadRestDays = async () => {
       const currentMonth = today.getMonth()
 
       const hasCurrentMonthDates = config.restDays.some((dateStr: string) => {
-        const date = new Date(dateStr)
+        const date = parseDateString(dateStr)
         return date.getFullYear() === currentYear && date.getMonth() === currentMonth
       })
 
@@ -418,12 +418,15 @@ const initializeDefaultRestDays = async () => {
   const restDaysList: string[] = []
 
   console.log('[Home] 开始初始化休息日，当前日期:', formatDateString(today))
+  console.log('[Home] 当前时间:', today.toString())
 
   // 当前月份和未来2个月的周末
   for (let monthOffset = 0; monthOffset < 3; monthOffset++) {
     const year = today.getFullYear()
     const month = today.getMonth() + monthOffset
     const lastDay = new Date(year, month + 1, 0).getDate()
+
+    console.log(`[Home] 处理第${monthOffset + 1}个月: ${year}年${month + 1}月，共${lastDay}天`)
 
     for (let day = 1; day <= lastDay; day++) {
       const date = new Date(year, month, day)
@@ -433,6 +436,11 @@ const initializeDefaultRestDays = async () => {
       if (dayOfWeek === 0 || dayOfWeek === 6) {
         const dateStr = formatDateString(date)
         restDaysList.push(dateStr)
+
+        // 调试日志：输出前10个休息日
+        if (restDaysList.length <= 10) {
+          console.log(`[Home] 休息日 ${restDaysList.length}: ${dateStr}, 星期${dayOfWeek === 0 ? '日' : '六'} (dayOfWeek=${dayOfWeek}, day=${day}, month=${month}, year=${year})`)
+        }
       }
     }
   }
@@ -607,46 +615,48 @@ const goToToday = () => {
 const calendarDays = computed(() => {
   const year = currentDate.value.getFullYear()
   const month = currentDate.value.getMonth()
-  
+
   // 本月第一天
   const firstDay = new Date(year, month, 1)
   const firstDayOfWeek = firstDay.getDay()
-  
+
   // 本月最后一天
   const lastDay = new Date(year, month + 1, 0)
   const lastDate = lastDay.getDate()
-  
+
   // 上个月最后几天
   const prevMonthLastDay = new Date(year, month, 0).getDate()
-  
+
   const days: any[] = []
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  
+
+  let dayIndex = 0 // 用于调试日志
+
   // 上个月的日期
   for (let i = firstDayOfWeek - 1; i >= 0; i--) {
     const day = prevMonthLastDay - i
     const date = new Date(year, month - 1, day)
-    days.push(createDayObject(date, day, true))
+    days.push(createDayObject(date, day, true, dayIndex++))
   }
-  
+
   // 本月的日期
   for (let day = 1; day <= lastDate; day++) {
     const date = new Date(year, month, day)
-    days.push(createDayObject(date, day, false))
+    days.push(createDayObject(date, day, false, dayIndex++))
   }
-  
+
   // 下个月的日期（补齐6行）
   const remainingDays = 42 - days.length
   for (let day = 1; day <= remainingDays; day++) {
     const date = new Date(year, month + 1, day)
-    days.push(createDayObject(date, day, true))
+    days.push(createDayObject(date, day, true, dayIndex++))
   }
-  
+
   return days
 })
 
-const createDayObject = (date: Date, dayNumber: number, isOtherMonth: boolean) => {
+const createDayObject = (date: Date, dayNumber: number, isOtherMonth: boolean, dayIndex: number) => {
   const dateStr = formatDateString(date)
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -655,6 +665,18 @@ const createDayObject = (date: Date, dayNumber: number, isOtherMonth: boolean) =
   // 判断是否为周末
   const dayOfWeek = date.getDay()
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+
+  // 调试日志：输出前14个日期的周末判断
+  if (dayIndex < 14) {
+    const weekdayNames = ['日', '一', '二', '三', '四', '五', '六']
+    console.log(`[Home] 日历格子${dayIndex + 1}: ${dateStr} 星期${weekdayNames[dayOfWeek]} (dayOfWeek=${dayOfWeek}, isWeekend=${isWeekend})`)
+  }
+
+  // 调试日志：输出今天的信息
+  const isToday = date.getTime() === today.getTime()
+  if (isToday) {
+    console.log(`[Home] 今天: ${dateStr}, 星期${['日','一','二','三','四','五','六'][dayOfWeek]}, dayOfWeek=${dayOfWeek}, isWeekend=${isWeekend}`)
+  }
 
   // 判断是否为休息日
   const isRestDay = restDays.value.includes(dateStr)
@@ -691,7 +713,7 @@ const createDayObject = (date: Date, dayNumber: number, isOtherMonth: boolean) =
   return {
     date: dateStr,
     dayNumber,
-    isToday: date.getTime() === today.getTime(),
+    isToday,
     isOtherMonth,
     isWeekend,
     isRestDay,

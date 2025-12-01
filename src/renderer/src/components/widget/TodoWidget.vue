@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { NEmpty } from 'naive-ui'
+import { formatDateString, getTodayString } from '../../utils/dateUtils'
 
 interface ScheduledTask {
   commissionId: string
@@ -32,7 +33,7 @@ interface TodoItem {
 
 const todos = ref<TodoItem[]>([])
 const loading = ref(true)
-const selectedDate = ref<string>(new Date().toISOString().split('T')[0]) // 默认显示今天
+const selectedDate = ref<string>(getTodayString()) // 默认显示今天
 
 // 长按相关
 const longPressTimer = ref<number | null>(null)
@@ -40,7 +41,7 @@ const longPressThreshold = 500 // 500ms
 
 // 获取日期显示文本
 const getDateText = computed(() => {
-  const today = new Date().toISOString().split('T')[0]
+  const today = getTodayString()
   if (selectedDate.value === today) {
     return '今日待办'
   }

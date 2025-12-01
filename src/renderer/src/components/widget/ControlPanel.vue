@@ -33,8 +33,13 @@ const windowStartX = ref(0)
 const windowStartY = ref(0)
 
 // 草莓按钮点击
-const toggleMenu = () => {
+const toggleMenu = async () => {
   showMenu.value = !showMenu.value
+
+  // 打开菜单时刷新状态
+  if (showMenu.value) {
+    await getWidgetStates()
+  }
 }
 
 // 开始拖拽
@@ -113,8 +118,24 @@ const closeApp = () => {
 
 // 切换小组件显示
 const toggleWidget = async (type: string) => {
-  const isVisible = await window.electron.ipcRenderer.invoke('widget:toggleWidget', type)
-  widgetStates.value[type] = isVisible
+  // 乐观更新：先假设操作成功
+  const currentState = widgetStates.value[type]
+  widgetStates.value[type] = !currentState
+
+  try {
+    // 调用主进程切换
+    await window.electron.ipcRenderer.invoke('widget:toggleWidget', type)
+
+    // 延迟获取实际状态（等待窗口完全创建）
+    setTimeout(async () => {
+      const actualStates = await window.electron.ipcRenderer.invoke('widget:getStates')
+      widgetStates.value = actualStates
+    }, 150)
+  } catch (error) {
+    // 如果失败，恢复原状态
+    console.error('Toggle widget failed:', error)
+    widgetStates.value[type] = currentState
+  }
 }
 
 // 获取小组件状态
